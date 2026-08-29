@@ -19,14 +19,12 @@ if (EXISTS ${picoVscode})
 endif()
 # ====================================================================================
 
-# pico_w, not pico2_w. PLAN.md argues for the Pico 2 W on memory grounds and that
-# is still where this is heading, but two of the three drivers here (the ST7789
-# PIO chain and the I2S timing) were only ever characterised on an RP2040 at
-# 128 MHz, and the display driver pokes PIO registers directly. Getting the
-# integration right on the board the peripherals are known to work on comes
-# first; the RP2350 move is its own task, with its own gotchas (PIO instruction
-# encodings, the GPIO isolation latch).
-set(PICO_BOARD pico_w CACHE STRING "Board type")
+# Pico 2 W (RP2350). Override with -DPICO_BOARD=pico_w for the original board.
+# The system clock stays at 128 MHz: that is what the ST7789 PIO timings were
+# measured at, and it keeps the I2S divider honest. The display driver still
+# pokes PIO registers directly; gpio_set_function() is used for the mux so the
+# RP2350 pad-isolation latch is cleared.
+set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
 if(NOT PICO_SDK_PATH)
     set(PICO_SDK_PATH "${USERHOME}/.pico-sdk/sdk/${sdkVersion}")
@@ -203,12 +201,10 @@ set_source_files_properties(demo/main.c demo/font5x7.c demo/game_glue.c
 # is 436 events (~7 KB at 16 bytes each); the largest tune in the game is
 # several times that.
 #
-# 20 KB is what is left once the two screen buffers, the arena and BTstack have
-# had theirs - asking for 32 KB overflows RAM by 2228 bytes. That is a real
-# result, not a tuning detail: on a Pico W there is not enough room to parse the
-# bigger tunes at runtime, so pre-parsing them at build time (PLAN.md 3.3) is
-# required rather than merely tidy. The demo reports its peak heap use so the
-# number is measured rather than assumed.
+# 20 KB was the Pico W ceiling (32 KB overflowed RAM by 2228 bytes). The Pico 2 W
+# has 520 KB, so this is no longer load-bearing; it is kept as a measured bound
+# for parse_midi() until the tunes are pre-parsed at build time (PLAN.md 3.3).
+# The demo reports its peak heap use so the number is measured rather than assumed.
 target_compile_definitions(picosdl-demo PRIVATE PICO_HEAP_SIZE=20480)
 
 # Console on both UART0 (GP0/GP1, what the debugprobe bridges) and USB CDC, so

@@ -8,9 +8,9 @@ game code here yet. What it establishes — **now confirmed on a board, not just
 a build** — is that a program written against the SDL2 API runs on a Pico, and
 that the panel, the radio and the DAC coexist on one chip.
 
-Running on a Pico W: 43–45 fps, the game's title theme playing from boot at
-38–41% of one core, a Bluetooth keyboard typing into it, and the analog stick
-moving a sprite around.
+Running on a Pico 2 W: the same demo that was characterised on a Pico W at
+43–45 fps, the game's title theme playing from boot at 38–41% of one core, a
+Bluetooth keyboard typing into it, and the analog stick moving a sprite around.
 
 ## What it is
 
@@ -137,13 +137,12 @@ file.
 
 ## Board and clock
 
-**`pico_w` (RP2040) at 128 MHz.** PLAN.md argues for the Pico 2 W on memory
-grounds and that is still where this is heading — but two of the three drivers
-here were only ever characterised on an RP2040 at 128 MHz, and the display
-driver pokes PIO registers directly rather than going through the SDK. Getting
-the integration right on the board the peripherals are known to work on comes
-first. The RP2350 move is its own task with its own gotchas (PIO instruction
-encodings, the GPIO isolation latch).
+**`pico2_w` (RP2350) at 128 MHz.** The clock is unchanged from the Pico W build:
+two of the three drivers here were characterised at 128 MHz, and the display
+driver still pokes PIO registers directly. What did have to change for RP2350
+is the pad mux — a raw FUNCSEL write leaves the isolation latch set, so those
+pins now go through `gpio_set_function()`. Override with `-DPICO_BOARD=pico_w`
+for the original board.
 
 128 MHz is not arbitrary: it makes the I2S divider exactly 125.0 at 8 kHz and it
 is the clock the ST7789 PIO timings were measured at. `set_sys_clock_khz()` must
@@ -270,15 +269,16 @@ two-line change in `bt_app.c` when that gets folded into the game.
 ## Measured
 
 ```
-text 1715168   bss 224344     picosdl-demo.elf, -DCMAKE_BUILD_TYPE=Release
+text 1701508   bss 223960     picosdl-demo.elf, pico2_w, -DCMAKE_BUILD_TYPE=Release
 ```
 
 *On the board*: 43–45 fps sustained, mixer load 38–41% average and 43–64% peak
 with the music playing and Bluetooth connected.
 
-Flash: 1675 KB of the 2 MB board, including the 1138 KB of game resources and
-the 234 KB CYW43 firmware blob. BSS is 219 KB of the RP2040's 264 KB, leaving
-about 45 KB, of which 20 KB is currently the heap `parse_midi` uses:
+Flash: 1640 KB of the Pico 2 W's 4 MB, including the 1138 KB of game resources and
+the 234 KB CYW43 firmware blob. The RAM budget below was measured on the Pico W
+(219 KB BSS of 264 KB); the Pico 2 W has 520 KB, so that squeeze is gone. 20 KB
+is still the heap `parse_midi` uses:
 
 | | |
 |---|---|
@@ -292,13 +292,11 @@ about 45 KB, of which 20 KB is currently the heap `parse_midi` uses:
 | I2S DMA double buffer | 4.0 KB |
 | event ring (64) | 3.5 KB |
 
-The game's own globals are roughly 60 KB on top of this, and there is nothing
-like that left. Three levers recover 91 KB between them — one screen buffer
-instead of two (62.5 KB), pre-parsing the MIDI at build time (20 KB, and
-required on this board anyway), and precomputing DBOPL's wave tables into flash
-(8.8 KB) — which would make a Pico W work. See PLAN.md §7. **RAM, not CPU, is
-now the binding constraint**: the CPU argument for the Pico 2 W went away when
-the emulator changed.
+The game's own globals are roughly 60 KB on top of this. On the Pico W there was
+nothing like that left; on the Pico 2 W there is. Three levers still recover
+91 KB between them — one screen buffer instead of two (62.5 KB), pre-parsing the
+MIDI at build time (20 KB), and precomputing DBOPL's wave tables into flash
+(8.8 KB) — which is how a Pico W would still work. See PLAN.md §7.
 
 **Heap: picosdl contributes zero, and almost nothing else does either.**
 Disassembly shows three heap users in the whole firmware. Two are in the SDK and

@@ -27,10 +27,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* The system clock. 128 MHz, not the default 125, because both vendored
- * drivers were characterised at it: it makes the I2S divider exact at 8 kHz and
- * it is the clock the ST7789 PIO timings were measured at. Callers must set
- * this before stdio_init_all() - see the note in the demo's main(). */
+/* The system clock. 128 MHz, not the RP2040 default of 125 or the RP2350
+ * default of 150, because both vendored drivers were characterised at it: it
+ * makes the I2S divider exact at 8 kHz and it is the clock the ST7789 PIO
+ * timings were measured at. Callers must set this before stdio_init_all() -
+ * see the note in the demo's main(). */
 #define PSDL_PICO_SYS_CLOCK_KHZ 128000
 
 /* The panel is 320x240 and the game's canvas is 320x200, so the picture is
