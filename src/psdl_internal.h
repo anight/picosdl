@@ -1,0 +1,137 @@
+/*
+ * picosdl internals: the tunables, the backend interface, and the few things
+ * the modules share with each other.
+ *
+ * "Backend" here means the platform half - the thing that owns a panel, a DAC
+ * and an input device. picosdl proper never talks to hardware; it draws into a
+ * framebuffer and calls these.
+ */
+#ifndef PICOSDL_INTERNAL_H
+#define PICOSDL_INTERNAL_H
+
+#include "SDL2/SDL.h"
+
+/* --------------------------------------------------------------- tunables */
+
+/* The game's canvas. VGA mode 13h minus the borders, which is what Prince of
+ * Persia draws into. The panel is 320x240, so this is letterboxed by the video
+ * backend rather than scaled. */
+#ifndef PSDL_SCREEN_W
+#define PSDL_SCREEN_W 320
+#endif
+#ifndef PSDL_SCREEN_H
+#define PSDL_SCREEN_H 200
+#endif
+
+/* The LIFO arena that backs peel surfaces (see PLAN.md section 6f). Peels are
+ * created and restored in strict stack order, so a bump pointer is enough and
+ * fragmentation is structurally impossible. Size this from the high-water mark
+ * measured on the desktop build, not from the worst case. */
+#ifndef PSDL_ARENA_BYTES
+#define PSDL_ARENA_BYTES (28 * 1024)
+#endif
+
+/* Every surface that exists at once: the screen buffers, whatever the caller
+ * creates, and one header per live arena surface. */
+#ifndef PSDL_MAX_SURFACES
+#define PSDL_MAX_SURFACES 96
+#endif
+
+/* Full-screen buffers, which get their own pool rather than the arena. SDLPoP
+ * wants two: the window surface and the offscreen buffer it draws into. */
+#ifndef PSDL_SCREEN_BUFFERS
+#define PSDL_SCREEN_BUFFERS 2
+#endif
+
+#ifndef PSDL_EVENT_QUEUE_LEN
+#define PSDL_EVENT_QUEUE_LEN 64
+#endif
+
+#ifndef PSDL_MAX_TIMERS
+#define PSDL_MAX_TIMERS 4
+#endif
+
+/* Audio staging: one callback's worth of signed 16-bit stereo frames. */
+#ifndef PSDL_AUDIO_BLOCK_FRAMES
+#define PSDL_AUDIO_BLOCK_FRAMES 256
+#endif
+
+/*
+ * Master volume at startup, out of PSDL_VOLUME_UNITY (256).
+ *
+ * Not unity on purpose. A MAX98357A driving a small speaker is loud, and
+ * anything wrong in the mixer is loud *at full scale* - which is unpleasant and
+ * makes a fault hard to work on. A quarter is enough to hear what is happening
+ * without hurting. Raise it at runtime once the audio is behaving.
+ */
+#ifndef PSDL_DEFAULT_VOLUME
+#define PSDL_DEFAULT_VOLUME 64
+#endif
+
+/* ---------------------------------------------------------------- panics */
+
+/* Nothing here allocates, so the failure mode for "ran out" is a bug, not a
+ * condition to recover from. Say so loudly rather than returning NULL into
+ * code that will not check it. */
+void psdl_panic(const char *fmt, ...) __attribute__((noreturn));
+
+#define PSDL_ASSERT(cond, msg) \
+	do { if (!(cond)) psdl_panic("picosdl: %s (%s:%d)", msg, __FILE__, __LINE__); } while (0)
+
+/* ---------------------------------------------------- module entry points */
+
+void         psdl_surface_init(void);
+SDL_Surface *psdl_surface_alloc_header(void);
+void         psdl_surface_free_header(SDL_Surface *s);
+
+void         psdl_palette_init(void);
+void         psdl_video_init(void);
+void         psdl_events_init(void);
+void         psdl_timer_init(void);
+void         psdl_audio_init(void);
+
+/* The framebuffer the game draws into, for the video backend to push. */
+SDL_Surface *psdl_screen_surface(void);
+
+/* Called by input backends. The push_* functions queue an event; the
+ * joystick_set_* ones update the state SDL_JoystickGetAxis/Button reports. */
+void psdl_push_key(SDL_Scancode scancode, int pressed, Uint16 mod);
+void psdl_push_joy_axis(int axis, Sint16 value);
+void psdl_push_joy_button(int button, int pressed);
+void psdl_push_quit(void);
+void psdl_joystick_set_axis(int axis, Sint16 value);
+void psdl_joystick_set_button(int button, int pressed);
+
+/* Called by the audio backend from whichever core runs the mixer: fills buf
+ * with `frames` stereo int16 frames by invoking the client's SDL callback.
+ * Writes silence if no callback is open or audio is paused. */
+void psdl_audio_render(Sint16 *buf, int frames);
+
+/* ------------------------------------------------------ backend interface */
+
+/* Video. present() is asynchronous on hardware; sync() waits for the previous
+ * one to land. The split lets a caller overlap drawing with the panel push. */
+void psdl_backend_video_init(int w, int h);
+void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch);
+void psdl_backend_video_sync(void);
+void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors);
+
+/* Input. poll() is called from SDL_PumpEvents and should push whatever it has. */
+void psdl_backend_input_init(void);
+void psdl_backend_input_poll(void);
+
+/* Audio. The backend pulls via psdl_audio_render(). The lock is held across the
+ * client callback and is what SDL_LockAudio maps to, so it has to work across
+ * cores - the mixer runs on core 1. */
+void psdl_backend_audio_open(int freq, int channels, int block_frames);
+void psdl_backend_audio_close(void);
+void psdl_backend_audio_pause(int pause_on);
+void psdl_backend_audio_lock(void);
+void psdl_backend_audio_unlock(void);
+
+/* Time. */
+Uint32 psdl_backend_ticks_ms(void);
+Uint64 psdl_backend_ticks_us(void);
+void   psdl_backend_delay_ms(Uint32 ms);
+
+#endif /* PICOSDL_INTERNAL_H */
