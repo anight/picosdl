@@ -158,6 +158,33 @@ The ST7789 driver is a submodule, so:
 git submodule update --init
 ```
 
+### Flashing and the console
+
+`flash.sh` drives a board over SWD with a CMSIS-DAP probe:
+
+```bash
+./flash.sh flash [firmware.elf]   # program and reset
+./flash.sh reset                  # reset, program nothing
+./flash.sh logs                   # watch the console
+./flash.sh flash-and-logs [fw]    # program, reset, then watch from the first line
+```
+
+`flash-and-logs` attaches the console reader *before* programming, because a
+reader started afterwards has already missed the start-up banner, and drains the
+port first so the log does not open with leftovers from the previous run. Only the
+board's output goes to stdout, so `./flash.sh flash-and-logs | tee boot.log`
+captures just that.
+
+It refuses to read a console another process already has open. Two readers on one
+tty do not take turns - each gets whichever bytes it wins, and both see lines with
+pieces missing from the middle. That looks exactly like corruption on the wire and
+is worth failing loudly rather than debugging twice.
+
+`PICOPOP_CONSOLE` overrides the device, which otherwise defaults to the probe's
+UART bridge found under `/dev/serial/by-id` - stable, unlike `ttyACMn`, which
+moves when anything else is plugged in. `PICOPOP_BAUD`, `OPENOCD` and
+`PROBE_SERIAL` override the rest.
+
 ### Tests
 
 ```bash
