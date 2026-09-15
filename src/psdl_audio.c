@@ -12,6 +12,8 @@
  *
  * Only AUDIO_S16SYS stereo is supported, because it is what SDLPoP asks for.
  */
+#include <stdio.h>
+
 #include "psdl_internal.h"
 
 static SDL_AudioSpec  s_spec;
@@ -102,4 +104,102 @@ void psdl_audio_init(void)
 	s_open   = 0;
 	s_paused = 1;
 	memset(&s_spec, 0, sizeof(s_spec));
+}
+
+/* --------------------------------------------------- volume keys */
+
+/*
+ * The keyboard's volume and mute keys.
+ *
+ * SDL2 does not do this, and on a desktop it would be wrong to: the window
+ * manager takes the media keys and the application never sees them. There is no
+ * window manager here, so the library stands in for it - otherwise these keys
+ * reach a game that has no idea what to do with them. SDLPoP, for one, lists all
+ * four in its key handler purely to ignore them.
+ *
+ * The step is a 3 dB ladder rather than a fixed increment, because the volume is
+ * a linear multiplier and even steps in it sound wildly uneven: 25 -> 41 is an
+ * obvious jump, 205 -> 221 is inaudible. Doubling the multiplier is +6 dB, so a
+ * factor of the square root of two per press is +3 dB, which is about the
+ * smallest change that reads as "louder".
+ *
+ * There is no stored index. Up takes the lowest rung above the current volume and
+ * down the highest below it, so the ladder works from wherever the volume happens
+ * to be - a client's PSDL_DEFAULT_VOLUME override, or a programmatic
+ * PSDL_SetMasterVolume() - without a table entry having to exist for that value.
+ */
+static const short s_volume_ladder[] = {
+	4, 6, 8, 11, 16, 23, 32, 45, 64, 91, 128, 181, PSDL_VOLUME_UNITY
+};
+#define PSDL_VOLUME_RUNGS ((int)(sizeof s_volume_ladder / sizeof s_volume_ladder[0]))
+
+/* What to come back to when unmuting something that was already silent. */
+#define PSDL_UNMUTE_FALLBACK PSDL_DEFAULT_VOLUME
+
+static int s_premute_volume = -1;
+
+static void volume_step(int up)
+{
+	int v = PSDL_GetMasterVolume();
+	int n = v;
+
+	if (up) {
+		n = PSDL_VOLUME_UNITY;
+		for (int i = 0; i < PSDL_VOLUME_RUNGS; ++i)
+			if (s_volume_ladder[i] > v) { n = s_volume_ladder[i]; break; }
+	} else {
+		n = 0;
+		for (int i = PSDL_VOLUME_RUNGS - 1; i >= 0; --i)
+			if (s_volume_ladder[i] < v) { n = s_volume_ladder[i]; break; }
+	}
+
+	/* Stepping down to silence is a mute by another route; remember where from,
+	 * so that unmuting has somewhere to go. */
+	if (n == 0 && v > 0)
+		s_premute_volume = v;
+	else if (n > 0)
+		s_premute_volume = -1;
+
+	PSDL_SetMasterVolume(n);
+	printf("picosdl: volume %d/%d\n", n, PSDL_VOLUME_UNITY);
+}
+
+static void volume_mute_toggle(void)
+{
+	int v = PSDL_GetMasterVolume();
+
+	if (v > 0) {
+		s_premute_volume = v;
+		PSDL_SetMasterVolume(0);
+		printf("picosdl: muted (was %d/%d)\n", v, PSDL_VOLUME_UNITY);
+		return;
+	}
+
+	int back = s_premute_volume > 0 ? s_premute_volume : PSDL_UNMUTE_FALLBACK;
+	s_premute_volume = -1;
+	PSDL_SetMasterVolume(back);
+	printf("picosdl: unmuted, volume %d/%d\n", back, PSDL_VOLUME_UNITY);
+}
+
+/*
+ * Returns non-zero if the key was a volume key and has been dealt with, in which
+ * case the caller must not queue an event for it. Both the press and the release
+ * are swallowed, so a game never sees a lone SDL_KEYUP it did not ask for.
+ */
+int psdl_audio_volume_key(SDL_Scancode scancode, int pressed)
+{
+	switch (scancode) {
+	case SDL_SCANCODE_VOLUMEUP:
+		if (pressed) volume_step(1);
+		return 1;
+	case SDL_SCANCODE_VOLUMEDOWN:
+		if (pressed) volume_step(0);
+		return 1;
+	case SDL_SCANCODE_MUTE:
+	case SDL_SCANCODE_AUDIOMUTE:
+		if (pressed) volume_mute_toggle();
+		return 1;
+	default:
+		return 0;
+	}
 }

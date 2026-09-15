@@ -67,6 +67,18 @@ about. The Bluetooth stack hands over a usage; that usage is the scancode; it
 indexes the key-state array directly. There is no mapping table because there
 is nothing to map.
 
+### The volume keys do not reach the game
+
+Volume up, volume down and mute are handled by the library and consumed: no
+event is queued and `SDL_GetKeyboardState()` never shows them held. They step the
+master volume on a 3 dB ladder, and mute toggles, remembering where it was.
+
+This is a deliberate departure from SDL2, where a game does see them - but on a
+desktop it never has to care, because the window manager takes the media keys
+first. There is no window manager here, so the library stands in for it. Without
+that, every game would have to implement volume control or have those keys do
+nothing.
+
 ## Layout
 
 ```
@@ -113,8 +125,10 @@ a generic blitter:
   ignoring the source index. Used for fonts and 1bpp art, where the alternative
   is converting the whole glyph to ARGB8888 first.
 
-Also `PSDL_GlobalPalette()`, `PSDL_SetMasterVolume()` and `PSDL_ReportMemory()`,
-which prints the high-water marks of all three regions.
+Also `PSDL_GlobalPalette()`; `PSDL_SetMasterVolume()` / `PSDL_GetMasterVolume()`,
+a single gain applied after everything is mixed; `PSDL_ReportMemory()`, which
+prints the high-water marks of all three regions; and `PSDL_DumpArena()`, which
+lists the arena entry by entry and is called automatically if the arena runs out.
 
 ## Building
 

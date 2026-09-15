@@ -53,6 +53,13 @@ void psdl_push_key(SDL_Scancode scancode, int pressed, Uint16 mod)
 	if ((unsigned)scancode >= SDL_NUM_SCANCODES)
 		return;
 
+	/* Volume and mute are handled here rather than delivered. See
+	 * psdl_audio_volume_key(): there is no window manager on this hardware to
+	 * take the media keys, so the library does it. Deliberately before
+	 * s_keystate, so SDL_GetKeyboardState() never shows them held either. */
+	if (psdl_audio_volume_key(scancode, pressed))
+		return;
+
 	s_keystate[scancode] = pressed ? 1 : 0;
 	s_modstate = mod;
 

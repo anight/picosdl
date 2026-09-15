@@ -126,6 +126,11 @@ void psdl_joystick_set_button(int button, int pressed);
  * Writes silence if no callback is open or audio is paused. */
 void psdl_audio_render(Sint16 *buf, int frames);
 
+/* Handles the keyboard's volume/mute keys, standing in for the window manager
+ * that would take them on a desktop. Non-zero means the key was consumed and no
+ * event should be queued for it. */
+int  psdl_audio_volume_key(SDL_Scancode scancode, int pressed);
+
 /* ------------------------------------------------------ backend interface */
 
 /* Video. present() is asynchronous on hardware; sync() waits for the previous

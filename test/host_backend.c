@@ -67,3 +67,23 @@ Uint32 psdl_backend_ticks_ms(void)
 }
 
 void psdl_backend_delay_ms(Uint32 ms) { (void)ms; }
+
+/*
+ * Master volume. Declared in SDL.h and implemented by every backend, so the
+ * portable half can use it - psdl_audio_volume_key() does. Stored and returned
+ * rather than applied: this backend's "DAC" is a capture buffer, and scaling what
+ * the tests compare would make every one of them depend on the volume.
+ */
+static int s_master_volume = PSDL_DEFAULT_VOLUME;
+
+void PSDL_SetMasterVolume(int volume)
+{
+	if (volume < 0)              volume = 0;
+	if (volume > PSDL_VOLUME_UNITY) volume = PSDL_VOLUME_UNITY;
+	s_master_volume = volume;
+}
+
+int PSDL_GetMasterVolume(void)
+{
+	return s_master_volume;
+}
