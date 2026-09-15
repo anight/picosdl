@@ -28,7 +28,7 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     # here because the audio path is hard real-time and -Os is not fast enough
     # for it - a client's OPL synthesis missed the mixer's block deadline at -Os,
     # and a missed deadline is audible (the DMA chain re-triggers on stale buffer
-    # contents; see the note in flash.sh). Only set standalone: as a subdirectory
+    # contents; see the note in picodev.sh). Only set standalone: as a subdirectory
     # the parent project's choice wins, which is what a library should do.
     if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
         set(CMAKE_BUILD_TYPE Release CACHE STRING

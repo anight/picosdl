@@ -2,13 +2,14 @@
 #
 # Program, reset and watch a board over SWD.
 #
-#   ./flash.sh flash [firmware.elf]   program and reset
-#   ./flash.sh reset                  reset the board, program nothing
-#   ./flash.sh logs                   watch the console
-#   ./flash.sh flash-and-logs [fw]    program, reset, then watch the console
+#   ./picodev.sh flash [firmware.elf]   program and reset
+#   ./picodev.sh reset                  reset the board, program nothing
+#   ./picodev.sh halt                   stop the cores and silence the audio
+#   ./picodev.sh logs                   watch the console (tail -f, in effect)
+#   ./picodev.sh flash-and-logs [fw]    program, reset, then watch the console
 #
-# A bare path is still accepted, so `./flash.sh build/picopop.elf` means the same
-# as `./flash.sh flash build/picopop.elf`. With no arguments at all it prints this
+# A bare path is still accepted, so `./picodev.sh build/picopop.elf` means the same
+# as `./picodev.sh flash build/picopop.elf`. With no arguments at all it prints this
 # and does nothing: it used to flash a default image, which is too much to do on
 # an empty command line now that there are commands that do not touch the flash.
 #
@@ -165,7 +166,7 @@ console_check_free() {
 
 	Two readers on one serial port split the bytes between them, so both see
 	lines with pieces missing. Close the other one (minicom, screen, another
-	flash.sh) and try again.
+	picodev.sh) and try again.
 	EOF
 	exit 1
 }
@@ -199,6 +200,28 @@ cmd_flash() {
 
 cmd_reset() {
 	openocd_run -c "reset run" -c "exit"
+}
+
+#
+# Stop the board and leave it stopped.
+#
+# `halt` on its own is not enough to make a board go quiet, which is the whole
+# reason the silence sequence above exists: the audio DMA chain re-triggers itself
+# and keeps cycling the last two buffers into the DAC whether or not a CPU is
+# running. openocd_run already runs that sequence, so by the time the explicit
+# halts below execute the sound has already stopped.
+#
+# Both cores, because halting core 0 leaves the mixer running on core 1.
+#
+# OpenOCD leaves the target halted when it detaches, so the board stays stopped
+# after this returns - `reset` starts it again.
+#
+cmd_halt() {
+	openocd_run \
+		-c "catch { targets rp2350.cm0 }" -c "catch { halt }" \
+		-c "catch { targets rp2350.cm1 }" -c "catch { halt }" \
+		-c "echo {picopop: both cores halted, board left stopped}" \
+		-c "exit"
 }
 
 cmd_logs() {
@@ -245,6 +268,7 @@ case "${1:-}" in
 	"")             usage 1 ;;
 	flash)          cmd_flash "$2" ;;
 	reset)          cmd_reset ;;
+	halt)           cmd_halt ;;
 	logs)           cmd_logs ;;
 	flash-and-logs) cmd_flash_and_logs "$2" ;;
 	-h|--help|help) usage 0 ;;

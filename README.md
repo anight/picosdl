@@ -160,19 +160,27 @@ git submodule update --init
 
 ### Flashing and the console
 
-`flash.sh` drives a board over SWD with a CMSIS-DAP probe:
+`picodev.sh` drives a board over SWD with a CMSIS-DAP probe:
 
 ```bash
-./flash.sh flash [firmware.elf]   # program and reset
-./flash.sh reset                  # reset, program nothing
-./flash.sh logs                   # watch the console
-./flash.sh flash-and-logs [fw]    # program, reset, then watch from the first line
+./picodev.sh flash [firmware.elf]   # program and reset
+./picodev.sh reset                  # reset, program nothing
+./picodev.sh halt                   # stop the cores and silence the audio
+./picodev.sh logs                   # watch the console (tail -f, in effect)
+./picodev.sh flash-and-logs [fw]    # program, reset, then watch from the first line
 ```
+
+`halt` stops both cores and leaves them stopped; `reset` starts the board again.
+Both cores matters - halting core 0 alone leaves a mixer running on core 1 - and so
+does the order: halting does not by itself make a board quiet, because the audio
+DMA chain re-triggers itself and keeps cycling its last two buffers into the DAC
+with no CPU involved. The PIO state machines have to be stopped, which every
+command here does before anything else.
 
 `flash-and-logs` attaches the console reader *before* programming, because a
 reader started afterwards has already missed the start-up banner, and drains the
 port first so the log does not open with leftovers from the previous run. Only the
-board's output goes to stdout, so `./flash.sh flash-and-logs | tee boot.log`
+board's output goes to stdout, so `./picodev.sh flash-and-logs | tee boot.log`
 captures just that.
 
 It refuses to read a console another process already has open. Two readers on one
@@ -278,7 +286,7 @@ holding a two-entry address ring, so finishing one buffer re-triggers the other
 for ever and the output never glitches. The consequence is that halting the
 cores does not stop the sound: a debugger halt leaves the last two buffers
 cycling into the DAC. Stopping the PIO state machines is what silences it, which
-is what `flash.sh` does before programming.
+is what `picodev.sh` does before programming.
 
 **The I2S divider check was wrong** in the driver this vendored. It rejected any
 ratio whose fractional part was not a multiple of 1/16, on the grounds that a
