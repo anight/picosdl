@@ -2,16 +2,26 @@
 
 Known gaps in picosdl, roughly in the order they get in the way.
 
-## No example program
+## No example program — but one now exists to move
 
-The library has no demo of its own. There was one, but it played Prince of
-Persia's Adlib tunes and blitted its sprites, so it belonged to the game rather
-than to the library and moved out with it.
+The library still has no demo of its own. What has changed is that the reason is
+no longer that the demo belongs to a game: it does not any more, so what remains
+is a move rather than a rewrite.
 
-A library that cannot be run without supplying a game is hard to evaluate. What
-is wanted is something self-contained: a palette animation, a blit of a sprite
-generated at build time, a synthesised tone, a key and a stick reading — enough
-to prove a board is wired correctly and nothing more.
+picopop's `src/demo` exercises a palette animation, a flash-resident sprite
+blitted plain, mirrored and XORed, text through the keyed blitter and the LIFO
+arena, a Bluetooth keyboard, an analog stick, a four-voice synth in an audio
+callback, and an original three-voice tune — which is, item for item, the list
+this entry used to ask for. It links picosdl and nothing else: no SDLPoP, no
+generated resources, no OPL emulator, and no DAT files needed to build it.
+
+It played Prince of Persia's Adlib tunes through the game's `midi.c` until that
+was replaced, which was what tied it to a particular game — and to data nobody
+can redistribute. That tie is gone.
+
+So the work is to move `src/demo` here, point its CMake at the library rather than
+at the parent, and let `picosdl` build it standalone. Worth doing: a library whose
+example lives in a client's repository is one nobody else can run first.
 
 ## No host presentation
 
