@@ -24,6 +24,17 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     # divider exact at 8 kHz. Override with -DPICO_BOARD=pico_w.
     set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
+    # Size over speed, as for any library that ships in flash. The SDK would
+    # otherwise default to Release (-O3). Only set standalone: as a
+    # subdirectory the parent project's choice wins, which is what a library
+    # should do.
+    if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+        set(CMAKE_BUILD_TYPE MinSizeRel CACHE STRING
+            "Build type (MinSizeRel = -Os; Release = -O3)" FORCE)
+        set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+            Debug Release MinSizeRel RelWithDebInfo)
+    endif()
+
     include(${CMAKE_CURRENT_LIST_DIR}/cmake/pico_sdk_bootstrap.cmake)
     project(picosdl C CXX ASM)
     pico_sdk_init()
