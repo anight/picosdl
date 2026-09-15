@@ -141,3 +141,47 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra"
 )
 
+# ------------------------------------------------------------------- the demo
+#
+# The library's example program, and the thing to run first on a new board. It
+# exercises a palette animation driven by CLUT writes alone, a flash-resident
+# sprite blitted plain, mirrored and XORed, text through the keyed blitter and the
+# LIFO arena, a Bluetooth keyboard, an analog stick, a four-voice synth in an audio
+# callback, and an original tune - with a live mixer-load and memory report on
+# screen.
+#
+# It links picosdl and nothing else. It used to live in a game's tree and play that
+# game's music, which meant the library had no example anyone else could build; the
+# tune in demo/tune.c is original and the demo needs no data but its own.
+#
+# On by default standalone, off when picosdl is a subdirectory, because a game that
+# pulls this in for its own build probably does not want a second binary. A client
+# that does want it - for bring-up - sets PICOSDL_BUILD_DEMO before
+# add_subdirectory().
+#
+option(PICOSDL_BUILD_DEMO "Build picosdl-demo" ${PICOSDL_STANDALONE})
+
+if (PICOSDL_BUILD_DEMO)
+    add_executable(picosdl-demo
+        demo/main.c demo/font5x7.c demo/tune.c
+    )
+    target_link_libraries(picosdl-demo PRIVATE picosdl)
+    target_include_directories(picosdl-demo PRIVATE ${CMAKE_CURRENT_LIST_DIR}/demo)
+
+    set_source_files_properties(
+        demo/main.c demo/font5x7.c demo/tune.c
+        PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
+
+    # Nothing in the demo allocates; the heap is here only for newlib's stdio
+    # buffers.
+    target_compile_definitions(picosdl-demo PRIVATE PICO_HEAP_SIZE=4096)
+
+    # Land next to the top-level build directory either way, so the path to flash
+    # is build/picosdl-demo.elf whether this is its own project or a subdirectory.
+    set_target_properties(picosdl-demo PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+    pico_enable_stdio_uart(picosdl-demo 1)
+    pico_enable_stdio_usb(picosdl-demo 1)
+    pico_add_extra_outputs(picosdl-demo)
+endif()

@@ -158,6 +158,30 @@ The ST7789 driver is a submodule, so:
 git submodule update --init
 ```
 
+### The demo
+
+A standalone build produces `picosdl-demo`, which is the thing to run first on a
+new board. It exercises a palette animation driven by CLUT writes alone, a
+flash-resident sprite blitted plain, mirrored and XORed, text through the keyed
+blitter and the LIFO arena, a Bluetooth keyboard, an analog stick, a four-voice
+synth in an audio callback and an original tune - and puts the frame rate, the
+mixer load as a percentage of each audio block's budget, and the memory report on
+screen while doing it.
+
+```bash
+cmake -S . -B build && cmake --build build
+./picodev.sh flash-and-logs build/picosdl-demo.elf
+```
+
+It links this library and nothing else, so it is also the shortest complete example
+of using it. `T` is worth knowing about: a steady test tone replacing everything
+else, which bisects an audio fault into "the clocking, the DMA chain and the DAC"
+versus "whatever produces the samples".
+
+As a subdirectory the demo is off by default, on the assumption that a client does
+not want a second binary. `set(PICOSDL_BUILD_DEMO ON)` before `add_subdirectory()`
+turns it back on, which is worth doing while bringing a board up.
+
 ### Flashing and the console
 
 `picodev.sh` drives a board over SWD with a CMSIS-DAP probe:
