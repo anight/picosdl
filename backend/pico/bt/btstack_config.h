@@ -1,5 +1,5 @@
 /*
- * BTstack configuration for pico-test-bt-keyboard.
+ * BTstack configuration for picosdl's Bluetooth HID keyboard backend.
  *
  * Derived from the pico-examples Pico W Bluetooth config, trimmed to what a
  * dual-mode (Classic + LE) HID *host* actually needs. The buffer/flow-control

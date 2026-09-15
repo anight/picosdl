@@ -109,8 +109,10 @@ wraps SDL in anyway, and doing them directly avoids a scratch surface:
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build
 ```
 
-Produces `build/picosdl-demo.uf2`. The sibling `pico-test-st7789` and
-`pico-test-bt-keyboard` trees are referenced in place, not copied, so fixes
+The drivers picosdl needs live inside it: `vendor/pio-st7789` is a submodule
+of the ST7789 PIO driver's own repository, and `backend/pico/bt` is the
+Bluetooth HID keyboard, vendored. Run `git submodule update --init` after
+cloning. Fixes
 there do not have to be mirrored.
 
 ### Host tests
@@ -365,7 +367,7 @@ code already here.
   with the all-zero "identity" BTstack reports for a device advertising a
   *static random* address — which has no identity to resolve. Every reconnect
   then failed with `gap_connect refused`. Pre-existing in
-  `pico-test-bt-keyboard`, not caused by this port.
+  the keyboard driver, not caused by this port.
 
 One consequence worth knowing: `parse_midi()` is the **only** thing in this
 firmware that uses the heap, and with the screen buffers, the arena and BTstack

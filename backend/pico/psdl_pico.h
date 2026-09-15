@@ -39,7 +39,7 @@
 #define PSDL_PICO_PANEL_W 320
 #define PSDL_PICO_PANEL_H 240
 
-/* I2S, matching pico-test-i2s-max98357a. LRCLK is always BCLK+1: the PIO
+/* I2S, from the MAX98357A bring-up. LRCLK is always BCLK+1: the PIO
  * program side-sets two bits based at bclkPin, so it cannot be moved. */
 #define PSDL_PICO_I2S_BCLK_PIN 2
 #define PSDL_PICO_I2S_DATA_PIN 4
