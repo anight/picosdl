@@ -16,6 +16,7 @@
  * TLV, the same store that holds the link keys), so a reboot reconnects
  * directly instead of searching again.
  */
+#include "../psdl_pico_log.h"
 #include "bt_app.h"
 
 #include <stdio.h>
@@ -99,7 +100,7 @@ static void on_key_event(const kbd_event_t *event) {
     // other key invisible.
     char line[80];
     kbd_event_format(event, line, sizeof(line));
-    printf("%s\n", line);
+    psdl_log("%s\n", line);
     fflush(stdout);
 }
 
@@ -155,7 +156,7 @@ void bt_app_forget_pairing(void) {
     if (stored_keyboard.kind == BT_LINK_LE) {
         gap_delete_bonding((bd_addr_type_t) stored_keyboard.addr_type, stored_keyboard.addr);
     }
-    printf("[app] forgot the paired keyboard\n");
+    psdl_log("[app] forgot the paired keyboard\n");
 }
 
 // --------------------------------------------------------- search phases --
@@ -176,7 +177,7 @@ static void phase_timeout(btstack_timer_source_t *ts) {
         case APP_RETRY_WAIT:
             if (have_stored_keyboard && reconnect_attempts < MAX_RECONNECT_ATTEMPTS) {
                 reconnect_attempts++;
-                printf("[app] reconnecting to %s (attempt %d/%d)\n",
+                psdl_log("[app] reconnecting to %s (attempt %d/%d)\n",
                        bd_addr_to_str(stored_keyboard.addr),
                        reconnect_attempts, MAX_RECONNECT_ATTEMPTS);
                 app_state = APP_CONNECTING;
@@ -212,7 +213,7 @@ static void set_phase_timer(uint32_t ms) {
 
 static void start_le_search(void) {
     app_state = APP_SEARCH_LE;
-    printf("[app] scanning for LE keyboards...\n");
+    psdl_log("[app] scanning for LE keyboards...\n");
     // LE scanning has no natural end, so we time-box it ourselves.
     set_phase_timer(LE_SCAN_WINDOW_MS);
     bt_le_start_search();
@@ -220,7 +221,7 @@ static void start_le_search(void) {
 
 static void start_classic_search(void) {
     app_state = APP_SEARCH_CLASSIC;
-    printf("[app] scanning for Classic keyboards...\n");
+    psdl_log("[app] scanning for Classic keyboards...\n");
     // The inquiry ends on its own and reports GAP_EVENT_INQUIRY_COMPLETE,
     // which comes back as bt_app_search_finished; this is only a backstop.
     set_phase_timer(CLASSIC_INQUIRY_BACKSTOP_MS);
@@ -252,7 +253,7 @@ static void start_connecting(void) {
     reconnect_attempts = 0;
 
     if (have_stored_keyboard) {
-        printf("[app] remembered a %s keyboard at %s, connecting...\n",
+        psdl_log("[app] remembered a %s keyboard at %s, connecting...\n",
                bt_link_kind_name((bt_link_kind_t) stored_keyboard.kind),
                bd_addr_to_str(stored_keyboard.addr));
         reconnect_attempts = 1;
@@ -282,7 +283,7 @@ void bt_app_device_found(bt_link_kind_t kind, const bd_addr_t addr,
     bt_le_stop_search();
     bt_classic_stop_search();
 
-    printf("[app] found %s keyboard %s%s%s, connecting...\n",
+    psdl_log("[app] found %s keyboard %s%s%s, connecting...\n",
            bt_link_kind_name(kind), bd_addr_to_str(addr),
            (name != NULL && name[0] != 0) ? " " : "",
            (name != NULL && name[0] != 0) ? name : "");
@@ -323,12 +324,12 @@ void bt_app_note_identity_address(bt_link_kind_t kind, const bd_addr_t addr,
     // right one to reconnect to precisely because it does not rotate.
     static const bd_addr_t no_identity = { 0 };
     if (memcmp(addr, no_identity, sizeof(bd_addr_t)) == 0) {
-        printf("[app] %s reported no identity address; keeping %s\n",
+        psdl_log("[app] %s reported no identity address; keeping %s\n",
                bt_link_kind_name(kind), bd_addr_to_str(pending_addr));
         return;
     }
 
-    printf("[app] %s resolves to identity address %s\n",
+    psdl_log("[app] %s resolves to identity address %s\n",
            bt_link_kind_name(kind), bd_addr_to_str((uint8_t *) addr));
     memcpy(pending_addr, addr, sizeof(bd_addr_t));
     pending_addr_type = addr_type;
@@ -350,7 +351,7 @@ void bt_app_link_up(bt_link_kind_t kind) {
     // Our lock state starts clear; push it so the keyboard's LEDs agree.
     bt_app_set_keyboard_leds(kbd_decode_led_mask());
 
-    printf("\n=== keyboard connected over %s - start typing ===\n", bt_link_kind_name(kind));
+    psdl_log("\n=== keyboard connected over %s - start typing ===\n", bt_link_kind_name(kind));
 }
 
 void bt_app_link_down(bt_link_kind_t kind, const char *reason) {
@@ -359,7 +360,7 @@ void bt_app_link_down(bt_link_kind_t kind, const char *reason) {
     if (app_state != APP_CONNECTING && app_state != APP_CONNECTED) return;
     if (app_state == APP_CONNECTED && kind != active_link) return;
 
-    printf("\n[app] %s link down: %s\n", bt_link_kind_name(kind), reason);
+    psdl_log("\n[app] %s link down: %s\n", bt_link_kind_name(kind), reason);
 
     active_link = BT_LINK_NONE;
     kbd_decode_reset();
@@ -370,24 +371,24 @@ void bt_app_link_down(bt_link_kind_t kind, const char *reason) {
 }
 
 void bt_app_print_status(void) {
-    printf("\n[app] state: ");
+    psdl_log("\n[app] state: ");
     switch (app_state) {
-        case APP_BOOT:           printf("starting up"); break;
-        case APP_SEARCH_LE:      printf("scanning (LE)"); break;
-        case APP_SEARCH_CLASSIC: printf("scanning (Classic)"); break;
-        case APP_CONNECTING:     printf("connecting"); break;
-        case APP_CONNECTED:      printf("connected over %s", bt_link_kind_name(active_link)); break;
-        case APP_RETRY_WAIT:     printf("waiting to retry"); break;
+        case APP_BOOT:           psdl_log("starting up"); break;
+        case APP_SEARCH_LE:      psdl_log("scanning (LE)"); break;
+        case APP_SEARCH_CLASSIC: psdl_log("scanning (Classic)"); break;
+        case APP_CONNECTING:     psdl_log("connecting"); break;
+        case APP_CONNECTED:      psdl_log("connected over %s", bt_link_kind_name(active_link)); break;
+        case APP_RETRY_WAIT:     psdl_log("waiting to retry"); break;
     }
-    printf(", %lu key events decoded", (unsigned long) key_events_seen);
+    psdl_log(", %lu key events decoded", (unsigned long) key_events_seen);
     if (have_stored_keyboard) {
-        printf(", paired with %s keyboard %s",
+        psdl_log(", paired with %s keyboard %s",
                bt_link_kind_name((bt_link_kind_t) stored_keyboard.kind),
                bd_addr_to_str(stored_keyboard.addr));
     } else {
-        printf(", no keyboard paired");
+        psdl_log(", no keyboard paired");
     }
-    printf("\n");
+    psdl_log("\n");
 }
 
 // ------------------------------------------------------------------ setup --
@@ -402,7 +403,7 @@ static void app_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *p
 
     bd_addr_t local_addr;
     gap_local_bd_addr(local_addr);
-    printf("[app] Bluetooth up on %s\n", bd_addr_to_str(local_addr));
+    psdl_log("[app] Bluetooth up on %s\n", bd_addr_to_str(local_addr));
 
     btstack_tlv_get_instance(&tlv_impl, &tlv_context);
     start_connecting();

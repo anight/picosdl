@@ -81,6 +81,7 @@ add_library(picosdl STATIC
     backend/pico/psdl_pico_audio.c
     backend/pico/psdl_pico_input.c
     backend/pico/psdl_pico_time.c
+    backend/pico/psdl_pico_log.c
     backend/pico/pio-i2s.c
     backend/pico/joystick.c
 
@@ -136,6 +137,7 @@ set_source_files_properties(
     src/psdl_rwops.c src/psdl_stubs.c
     backend/pico/psdl_pico_video.c backend/pico/psdl_pico_audio.c
     backend/pico/psdl_pico_input.c backend/pico/psdl_pico_time.c
+    backend/pico/psdl_pico_log.c
     PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra"
 )
 

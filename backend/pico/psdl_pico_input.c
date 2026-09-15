@@ -19,11 +19,13 @@
 #include "pico/stdlib.h"
 
 #include "bt_app.h"
+#include "bt/debug.h"
 #include "joystick.h"
 #include "kbd_decode.h"
 
 #include "psdl_internal.h"
 #include "psdl_pico.h"
+#include "psdl_pico_log.h"
 
 static int      s_ready;
 static int      s_bt_up;
@@ -62,10 +64,19 @@ static void console_command(char cmd)
 		printf("[console] searching again\n");
 		bt_app_search_again();
 		break;
+	case 'd':
+		pico_test_bt_keyboard_verbose = !pico_test_bt_keyboard_verbose;
+		printf("[console] bluetooth logging %s\n",
+		       pico_test_bt_keyboard_verbose ? "on" : "off");
+		break;
+	case 'v':
+		printf("[console] master volume %d/%d\n",
+		       PSDL_GetMasterVolume(), PSDL_VOLUME_UNITY);
+		break;
 	case '?':
 	case 'h':
 		printf("[console] s = status, r = forget pairing and re-search, "
-		       "n = re-search\n");
+		       "n = re-search, d = bluetooth log, v = volume\n");
 		break;
 	default:
 		break;
@@ -149,6 +160,7 @@ void psdl_backend_input_init(void)
 		return;
 	s_ready = 1;
 
+	psdl_log_init();
 	joystickInit();
 
 	if (cyw43_arch_init() != 0) {
@@ -179,6 +191,11 @@ void psdl_backend_input_init(void)
 
 void psdl_backend_input_poll(void)
 {
+	/* Core 0, outside any interrupt: the one place the queued log can be printed.
+	 * Drained before the early return so messages still come out when the input
+	 * backend failed to start. */
+	psdl_log_drain();
+
 	if (!s_ready)
 		return;
 	poll_joystick();

@@ -161,7 +161,7 @@ static void volume_step(int up)
 		s_premute_volume = -1;
 
 	PSDL_SetMasterVolume(n);
-	printf("picosdl: volume %d/%d\n", n, PSDL_VOLUME_UNITY);
+	psdl_backend_log("picosdl: volume %d/%d\n", n, PSDL_VOLUME_UNITY);
 }
 
 static void volume_mute_toggle(void)
@@ -171,14 +171,14 @@ static void volume_mute_toggle(void)
 	if (v > 0) {
 		s_premute_volume = v;
 		PSDL_SetMasterVolume(0);
-		printf("picosdl: muted (was %d/%d)\n", v, PSDL_VOLUME_UNITY);
+		psdl_backend_log("picosdl: muted (was %d/%d)\n", v, PSDL_VOLUME_UNITY);
 		return;
 	}
 
 	int back = s_premute_volume > 0 ? s_premute_volume : PSDL_UNMUTE_FALLBACK;
 	s_premute_volume = -1;
 	PSDL_SetMasterVolume(back);
-	printf("picosdl: unmuted, volume %d/%d\n", back, PSDL_VOLUME_UNITY);
+	psdl_backend_log("picosdl: unmuted, volume %d/%d\n", back, PSDL_VOLUME_UNITY);
 }
 
 /*

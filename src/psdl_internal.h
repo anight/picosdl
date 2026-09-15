@@ -135,6 +135,11 @@ int  psdl_audio_volume_key(SDL_Scancode scancode, int pressed);
 
 /* Video. present() is asynchronous on hardware; sync() waits for the previous
  * one to land. The split lets a caller overlap drawing with the panel push. */
+/* Console output that is safe from any core and from an interrupt. On hardware
+ * printf is not: the SDK serialises stdout with a mutex, which an exception
+ * handler cannot take. Backends that have no such problem may just print. */
+void psdl_backend_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+
 void psdl_backend_video_init(int w, int h);
 void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch);
 void psdl_backend_video_sync(void);

@@ -13,6 +13,7 @@
  * and the user is the side that types it -- which is why the IO capability is
  * DisplayOnly and why the legacy PIN is generated rather than hardcoded.
  */
+#include "../psdl_pico_log.h"
 #include "bt_app.h"
 
 #include <inttypes.h>
@@ -120,7 +121,7 @@ void bt_classic_connect(const bd_addr_t addr) {
                                       HID_PROTOCOL_MODE_REPORT_WITH_FALLBACK_TO_BOOT,
                                       &hid_cid);
     if (status != ERROR_CODE_SUCCESS) {
-        printf("[classic] connect refused, status 0x%02x\n", status);
+        psdl_log("[classic] connect refused, status 0x%02x\n", status);
         hid_cid = 0;
         bt_app_link_down(BT_LINK_CLASSIC, "connect refused");
     }
@@ -156,13 +157,18 @@ static void classic_handle_report(const uint8_t *report, uint16_t report_len) {
     }
 
     if (descriptor_len == 0) {
-        printf("[classic] cannot decode: no HID descriptor\n");
+        psdl_log("[classic] cannot decode: no HID descriptor\n");
         return;
     }
 
     kbd_report_t kbd;
-    hid_report_to_kbd(descriptor, descriptor_len, report, report_len, &kbd);
-    kbd_decode_report(&kbd);
+    kbd_media_t  media;
+    hid_report_to_kbd(descriptor, descriptor_len, report, report_len, &kbd, &media);
+    /* Only the halves this report actually described. A media report says nothing
+     * about which ordinary keys are held, and kbd_decode_report() would read that
+     * silence as "all released". */
+    if (media.describes_keyboard) kbd_decode_report(&kbd);
+    kbd_decode_media(&media);
 }
 
 // Announce the link once we can actually interpret what the keyboard sends.
@@ -180,7 +186,7 @@ static void classic_ready(void) {
             hid_descriptor_storage_get_descriptor_len(hid_cid));
     }
 
-    printf("[classic] HID ready (%s protocol mode)\n", boot_mode ? "boot" : "report");
+    psdl_log("[classic] HID ready (%s protocol mode)\n", boot_mode ? "boot" : "report");
     bt_app_link_up(BT_LINK_CLASSIC);
 }
 
@@ -199,7 +205,7 @@ static void handle_hid_event(uint8_t *packet) {
         case HID_SUBEVENT_CONNECTION_OPENED:
             status = hid_subevent_connection_opened_get_status(packet);
             if (status != ERROR_CODE_SUCCESS) {
-                printf("[classic] connection failed, status 0x%02x\n", status);
+                psdl_log("[classic] connection failed, status 0x%02x\n", status);
                 hid_cid = 0;
                 bt_app_link_down(BT_LINK_CLASSIC, "connection failed");
                 break;
@@ -207,7 +213,7 @@ static void handle_hid_event(uint8_t *packet) {
             hid_cid = hid_subevent_connection_opened_get_hid_cid(packet);
             descriptor_available = false;
             link_reported = false;
-            printf("[classic] connected\n");
+            psdl_log("[classic] connected\n");
             break;
 
         case HID_SUBEVENT_DESCRIPTOR_AVAILABLE:
@@ -218,7 +224,7 @@ static void handle_hid_event(uint8_t *packet) {
             } else {
                 // Without the report map we cannot decode Report mode data,
                 // but Boot mode has a fixed layout we already know.
-                printf("[classic] no HID descriptor (status 0x%02x), assuming boot layout\n", status);
+                psdl_log("[classic] no HID descriptor (status 0x%02x), assuming boot layout\n", status);
                 boot_mode = true;
                 descriptor_available = true;
                 classic_ready();
@@ -228,7 +234,7 @@ static void handle_hid_event(uint8_t *packet) {
         case HID_SUBEVENT_SET_PROTOCOL_RESPONSE:
             status = hid_subevent_set_protocol_response_get_handshake_status(packet);
             if (status != HID_HANDSHAKE_PARAM_TYPE_SUCCESSFUL) {
-                printf("[classic] set protocol failed, status 0x%02x\n", status);
+                psdl_log("[classic] set protocol failed, status 0x%02x\n", status);
                 break;
             }
             // Only reported when the negotiation landed on Boot mode, which is
@@ -294,20 +300,20 @@ static void classic_packet_handler(uint8_t packet_type, uint16_t channel, uint8_
             hci_event_pin_code_request_get_bd_addr(packet, addr);
             char pin[7];
             snprintf(pin, sizeof(pin), "%06" PRIu32, get_rand_32() % 1000000u);
-            printf("\n>>> Type %s on the keyboard, then press Enter <<<\n", pin);
+            psdl_log("\n>>> Type %s on the keyboard, then press Enter <<<\n", pin);
             gap_pin_code_response(addr, pin);
             break;
         }
 
         case HCI_EVENT_USER_PASSKEY_NOTIFICATION:
             // Secure Simple Pairing: the controller picked the passkey.
-            printf("\n>>> Type %06" PRIu32 " on the keyboard, then press Enter <<<\n",
+            psdl_log("\n>>> Type %06" PRIu32 " on the keyboard, then press Enter <<<\n",
                    hci_event_user_passkey_notification_get_numeric_value(packet));
             break;
 
         case HCI_EVENT_USER_CONFIRMATION_REQUEST:
             // Auto-accepted by BTstack; shown so the log explains itself.
-            printf("[classic] pairing confirmation %06" PRIu32 "\n",
+            psdl_log("[classic] pairing confirmation %06" PRIu32 "\n",
                    little_endian_read_32(packet, 8));
             break;
 

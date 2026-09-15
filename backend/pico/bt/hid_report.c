@@ -1,19 +1,41 @@
+#include "../psdl_pico_log.h"
 #include "hid_report.h"
 
 #include <string.h>
 
 #include "btstack.h"
 
+#include <stdio.h>
+
 #include "debug.h"
 
 #define USAGE_PAGE_KEYBOARD 0x07
+#define USAGE_PAGE_CONSUMER 0x0c
+
+/*
+ * Consumer-page media usages, and the Keyboard-page usages that mean the same
+ * thing. The keyboard page has its own Mute/Volume Up/Volume Down at 0x7f-0x81,
+ * and those are already SDL_SCANCODE_MUTE / VOLUMEUP / VOLUMEDOWN, so translating
+ * to them keeps picosdl's "a usage *is* a scancode" property intact and needs no
+ * mapping table anywhere else.
+ *
+ * The Consumer usage cannot simply be passed through: kbd_report_t holds usages
+ * as uint8_t, and Consumer 0xe2 (Mute) would collide with Keyboard 0xe2, which is
+ * Left Alt.
+ */
+static const struct { uint16_t consumer; uint8_t keyboard; } media_map[] = {
+    { 0x00e2, 0x7f },   // Mute
+    { 0x00e9, 0x80 },   // Volume Increment
+    { 0x00ea, 0x81 },   // Volume Decrement
+};
 #define USAGE_MOD_FIRST     0xe0
 #define USAGE_MOD_LAST      0xe7
 
 void hid_report_to_kbd(const uint8_t *descriptor, uint16_t descriptor_len,
                        const uint8_t *report, uint16_t report_len,
-                       kbd_report_t *out) {
+                       kbd_report_t *out, kbd_media_t *media) {
     memset(out, 0, sizeof(*out));
+    if (media != NULL) memset(media, 0, sizeof(*media));
     if (descriptor == NULL || descriptor_len == 0) return;
 
     // The parser skips usages whose Report ID does not match report[0], so a
@@ -33,7 +55,21 @@ void hid_report_to_kbd(const uint8_t *descriptor, uint16_t descriptor_len,
         btstack_hid_parser_get_field(&parser, &usage_page, &usage, &value);
         fields++;
 
+        if (usage_page == USAGE_PAGE_CONSUMER) {
+            if (media == NULL) continue;
+            media->describes_media = true;
+            if (value == 0 || usage == 0) continue;
+            for (unsigned m = 0; m < sizeof(media_map)/sizeof(media_map[0]); m++) {
+                if (media_map[m].consumer != usage) continue;
+                if (media->count < KBD_MAX_MEDIA)
+                    media->usage[media->count++] = media_map[m].keyboard;
+                break;
+            }
+            continue;
+        }
+
         if (usage_page != USAGE_PAGE_KEYBOARD) continue;
+        if (media != NULL) media->describes_keyboard = true;
 
         // For array fields the parser reports value == 1 and puts the keycode
         // in usage; for variable (bitmap) fields usage is fixed and value is

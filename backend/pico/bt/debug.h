@@ -13,6 +13,7 @@
 
 extern bool pico_test_bt_keyboard_verbose;
 
+
 // Printed only when verbose is on. Adds no newline of its own.
 void dbg(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 

@@ -61,6 +61,13 @@ void kbd_decode_init(kbd_event_handler_t on_event, kbd_led_handler_t on_leds);
 // was down when the link dropped does not suppress its next press.
 void kbd_decode_reset(void);
 
+// Feed the media keys of one report. Edge-detected against its own state, not
+// against the key array, so it cannot disturb which ordinary keys are held - see
+// kbd_media_t in hid_report.h for why that matters. Events come out through the
+// same handler as any other key.
+struct kbd_media_s;
+void kbd_decode_media(const struct kbd_media_s *media);
+
 // Feed a snapshot. Emits an event per key that changed since the last call.
 void kbd_decode_report(const kbd_report_t *report);
 

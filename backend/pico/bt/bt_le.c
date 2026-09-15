@@ -11,6 +11,7 @@
  * automatic fallback to Boot mode, so keyboards that expose only one of the two
  * both work, and Report mode keeps the media/function keys that Boot mode drops.
  */
+#include "../psdl_pico_log.h"
 #include "bt_app.h"
 
 #include <inttypes.h>
@@ -176,7 +177,7 @@ static void le_fail(const char *reason) {
 static void le_notify_timeout(btstack_timer_source_t *ts) {
     UNUSED(ts);
     if (le_state != LE_ENABLING_NOTIFICATIONS) return;
-    printf("[le] no reply to the notification subscription, continuing anyway\n");
+    psdl_log("[le] no reply to the notification subscription, continuing anyway\n");
     le_ready();
 }
 
@@ -277,7 +278,7 @@ static void le_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
 
             connection_handle = gap_subevent_le_connection_complete_get_connection_handle(packet);
             le_state = LE_PAIRING;
-            printf("[le] connected, requesting pairing\n");
+            psdl_log("[le] connected, requesting pairing\n");
             sm_request_pairing(connection_handle);
             break;
 
@@ -332,30 +333,30 @@ static void sm_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
             break;
 
         case SM_EVENT_NUMERIC_COMPARISON_REQUEST:
-            printf("[le] numeric comparison %06" PRIu32 " - accepting\n",
+            psdl_log("[le] numeric comparison %06" PRIu32 " - accepting\n",
                    sm_event_numeric_comparison_request_get_passkey(packet));
             sm_numeric_comparison_confirm(sm_event_numeric_comparison_request_get_handle(packet));
             break;
 
         case SM_EVENT_PASSKEY_DISPLAY_NUMBER:
             // The keyboard is the input device: the user types this on it.
-            printf("\n>>> Type %06" PRIu32 " on the keyboard, then press Enter <<<\n",
+            psdl_log("\n>>> Type %06" PRIu32 " on the keyboard, then press Enter <<<\n",
                    sm_event_passkey_display_number_get_passkey(packet));
             break;
 
         case SM_EVENT_PAIRING_COMPLETE:
             switch (sm_event_pairing_complete_get_status(packet)) {
                 case ERROR_CODE_SUCCESS:
-                    printf("[le] paired\n");
+                    psdl_log("[le] paired\n");
                     secured = true;
                     break;
                 case ERROR_CODE_AUTHENTICATION_FAILURE:
-                    printf("[le] pairing failed, reason %u\n",
+                    psdl_log("[le] pairing failed, reason %u\n",
                            sm_event_pairing_complete_get_reason(packet));
                     le_fail("pairing failed");
                     break;
                 default:
-                    printf("[le] pairing failed, status 0x%02x\n",
+                    psdl_log("[le] pairing failed, status 0x%02x\n",
                            sm_event_pairing_complete_get_status(packet));
                     le_fail("pairing failed");
                     break;
@@ -364,12 +365,12 @@ static void sm_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
 
         case SM_EVENT_REENCRYPTION_COMPLETE:
             if (sm_event_reencryption_complete_get_status(packet) == ERROR_CODE_SUCCESS) {
-                printf("[le] re-used stored bonding\n");
+                psdl_log("[le] re-used stored bonding\n");
                 secured = true;
             } else {
                 // The keyboard forgot us -- most often it was re-paired to
                 // another host. Drop our copy so the next attempt pairs fresh.
-                printf("[le] stored bonding rejected by keyboard\n");
+                psdl_log("[le] stored bonding rejected by keyboard\n");
                 bt_app_forget_pairing();
                 le_fail("bonding no longer valid");
             }
@@ -383,7 +384,7 @@ static void sm_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *pa
     if (le_state != LE_PAIRING) return;
 
     le_state = LE_DISCOVERING;
-    printf("[le] discovering HID service...\n");
+    psdl_log("[le] discovering HID service...\n");
     if (!le_connect_hids(HID_PROTOCOL_MODE_REPORT)) {
         le_fail("HID service unavailable");
     }
@@ -409,13 +410,18 @@ static void le_handle_report(uint8_t service_index, const uint8_t *report, uint1
     }
 
     if (descriptor_len == 0) {
-        printf("[le] cannot decode: no report map for service index %u\n", service_index);
+        psdl_log("[le] cannot decode: no report map for service index %u\n", service_index);
         return;
     }
 
     kbd_report_t kbd;
-    hid_report_to_kbd(descriptor, descriptor_len, report, report_len, &kbd);
-    kbd_decode_report(&kbd);
+    kbd_media_t  media;
+    hid_report_to_kbd(descriptor, descriptor_len, report, report_len, &kbd, &media);
+    /* Only the halves this report actually described. A media report says nothing
+     * about which ordinary keys are held, and kbd_decode_report() would read that
+     * silence as "all released". */
+    if (media.describes_keyboard) kbd_decode_report(&kbd);
+    kbd_decode_media(&media);
 }
 
 // Ask hids_client for a specific protocol mode.
@@ -432,7 +438,7 @@ static bool le_connect_hids(hid_protocol_mode_t mode) {
 
     uint8_t status = hids_client_connect(connection_handle, &hids_packet_handler, mode, &hids_cid);
     if (status != ERROR_CODE_SUCCESS) {
-        printf("[le] hids_client_connect(%s) failed, status 0x%02x\n",
+        psdl_log("[le] hids_client_connect(%s) failed, status 0x%02x\n",
                mode == HID_PROTOCOL_MODE_BOOT ? "boot" : "report", status);
         return false;
     }
@@ -472,7 +478,7 @@ static void post_connect_run(btstack_timer_source_t *ts) {
         post_connect_attempts++;
         dbg("[le] %s: status 0x%02x (attempt %u)\n", what, status, post_connect_attempts);
         if (post_connect_attempts >= POST_CONNECT_MAX_ATTEMPTS) {
-            printf("[le] gave up on '%s'\n", what);
+            psdl_log("[le] gave up on '%s'\n", what);
             post_connect_step++;
             post_connect_attempts = 0;
         }
@@ -499,7 +505,7 @@ static void le_ready(void) {
     btstack_run_loop_set_timer(&post_connect_timer, POST_CONNECT_INTERVAL_MS);
     btstack_run_loop_set_timer_handler(&post_connect_timer, &post_connect_run);
     btstack_run_loop_add_timer(&post_connect_timer);
-    printf("[le] HID ready (%s protocol mode)\n",
+    psdl_log("[le] HID ready (%s protocol mode)\n",
            active_protocol_mode == HID_PROTOCOL_MODE_BOOT ? "boot" : "report");
     bt_app_link_up(BT_LINK_LE);
 }
@@ -527,11 +533,11 @@ static void hids_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *
                 // A device with no report map cannot do Report mode; Boot mode
                 // needs no descriptor, so it is worth one more try.
                 if (active_protocol_mode == HID_PROTOCOL_MODE_REPORT) {
-                    printf("[le] report mode unavailable (status 0x%02x), trying boot mode\n",
+                    psdl_log("[le] report mode unavailable (status 0x%02x), trying boot mode\n",
                            status);
                     if (le_connect_hids(HID_PROTOCOL_MODE_BOOT)) break;
                 }
-                printf("[le] HID service connect failed, status 0x%02x\n", status);
+                psdl_log("[le] HID service connect failed, status 0x%02x\n", status);
                 le_fail("HID service connect failed");
                 break;
             }
@@ -550,13 +556,13 @@ static void hids_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *
                 dbg("[le] service %u report map: %u bytes\n", i, dlen);
 
                 if (dlen == 0) {
-                    printf("[le] WARNING: service %u has an empty report map; "
+                    psdl_log("[le] WARNING: service %u has an empty report map; "
                            "falling back to the boot keyboard layout\n", i);
                     // Better than decoding nothing: boot reports have a fixed
                     // layout, so a keyboard sending them still works.
                     active_protocol_mode = HID_PROTOCOL_MODE_BOOT;
                 } else if (dlen >= HID_DESCRIPTOR_STORAGE_SIZE) {
-                    printf("[le] WARNING: report map filled the %u byte buffer and was "
+                    psdl_log("[le] WARNING: report map filled the %u byte buffer and was "
                            "probably truncated; raise HID_DESCRIPTOR_STORAGE_SIZE\n",
                            HID_DESCRIPTOR_STORAGE_SIZE);
                 }
@@ -585,7 +591,7 @@ static void hids_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *
                 break;
             }
 
-            printf("[le] could not request notifications (status 0x%02x), "
+            psdl_log("[le] could not request notifications (status 0x%02x), "
                    "continuing anyway\n", notify_status);
             le_ready();
             break;

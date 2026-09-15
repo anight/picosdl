@@ -1,4 +1,6 @@
+#include "../psdl_pico_log.h"
 #include "kbd_decode.h"
+#include "hid_report.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -82,6 +84,8 @@ static kbd_event_handler_t event_handler;
 static kbd_led_handler_t   led_handler;
 
 static uint8_t held[KBD_MAX_KEYS];
+/* Media keys keep their own held-set; see kbd_decode_media(). */
+static uint8_t held_media[KBD_MAX_MEDIA];
 static uint8_t held_modifiers;
 static uint8_t led_mask;
 
@@ -93,6 +97,7 @@ void kbd_decode_init(kbd_event_handler_t on_event, kbd_led_handler_t on_leds) {
 
 void kbd_decode_reset(void) {
     memset(held, 0, sizeof(held));
+    memset(held_media, 0, sizeof(held_media));
     held_modifiers = 0;
     led_mask = 0;
 }
@@ -252,4 +257,39 @@ void kbd_decode_boot_report(const uint8_t *data, uint16_t len) {
     memcpy(report.keys, &data[2], count);
 
     kbd_decode_report(&report);
+}
+
+
+/*
+ * Media keys.
+ *
+ * Their own held-set, because they arrive in their own report: see kbd_media_t.
+ * Only acted on when the report actually carried Consumer-page fields, so an
+ * ordinary keyboard report - which says nothing about them - does not read as
+ * "all media keys released".
+ */
+static bool media_is_held(const uint8_t *set, uint8_t usage) {
+    for (int i = 0; i < KBD_MAX_MEDIA; i++)
+        if (set[i] == usage) return true;
+    return false;
+}
+
+void kbd_decode_media(const struct kbd_media_s *media_in) {
+    const kbd_media_t *media = (const kbd_media_t *)media_in;
+    if (media == NULL || !media->describes_media) return;
+
+    for (int i = 0; i < KBD_MAX_MEDIA; i++) {
+        uint8_t usage = held_media[i];
+        if (usage != 0 && !media_is_held(media->usage, usage))
+            emit(usage, held_modifiers, false);
+    }
+    for (int i = 0; i < media->count; i++) {
+        uint8_t usage = media->usage[i];
+        if (usage != 0 && !media_is_held(held_media, usage))
+            emit(usage, held_modifiers, true);
+    }
+
+    memset(held_media, 0, sizeof(held_media));
+    for (int i = 0; i < media->count && i < KBD_MAX_MEDIA; i++)
+        held_media[i] = media->usage[i];
 }
