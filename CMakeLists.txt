@@ -24,13 +24,15 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     # divider exact at 8 kHz. Override with -DPICO_BOARD=pico_w.
     set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
-    # Size over speed, as for any library that ships in flash. The SDK would
-    # otherwise default to Release (-O3). Only set standalone: as a
-    # subdirectory the parent project's choice wins, which is what a library
-    # should do.
+    # Speed over size: -O3. This is the SDK's default anyway, but it is stated
+    # here because the audio path is hard real-time and -Os is not fast enough
+    # for it - a client's OPL synthesis missed the mixer's block deadline at -Os,
+    # and a missed deadline is audible (the DMA chain re-triggers on stale buffer
+    # contents; see the note in flash.sh). Only set standalone: as a subdirectory
+    # the parent project's choice wins, which is what a library should do.
     if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-        set(CMAKE_BUILD_TYPE MinSizeRel CACHE STRING
-            "Build type (MinSizeRel = -Os; Release = -O3)" FORCE)
+        set(CMAKE_BUILD_TYPE Release CACHE STRING
+            "Build type (Release = -O3; -Os is too slow for the mixer)" FORCE)
         set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
             Debug Release MinSizeRel RelWithDebInfo)
     endif()
