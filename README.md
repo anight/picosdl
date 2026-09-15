@@ -232,6 +232,12 @@ event-ring overflow.
 
 ## The hardware
 
+**Every pin number and the system clock are in `backend/pico/board.h`**, and
+nothing else defines either - the vendored ST7789 driver's `pinout.h` derives its
+names from there too. Porting to a differently wired board, or changing the clock,
+is that one file. The clock comment in it lists which reachable frequencies are
+worth wanting and what each does to the panel, the frame time and the sample rate.
+
 **`pico2_w` (RP2350) at 138 MHz.** Below the SDK's 150 MHz default, so the core is
 not overclocked - the panel is, at sysclk/2 = 69 MHz against a 62.5 MHz maximum.
 The clock is not arbitrary: it makes the I2S
@@ -313,6 +319,12 @@ for ever and the output never glitches. The consequence is that halting the
 cores does not stop the sound: a debugger halt leaves the last two buffers
 cycling into the DAC. Stopping the PIO state machines is what silences it, which
 is what `picodev.sh` does before programming.
+
+**The pin numbers moved out.** `vendor/pio-st7789/pinout.h` held them literally;
+it now derives them from `backend/pico/board.h` so the board is described in one
+place. The driver's own names are unchanged. Upstream's commented-out pins for the
+backlight, touch controller and SD card are dropped rather than carried, since
+nothing here drives them and two commented copies would only drift apart.
 
 **The I2S divider check was wrong** in the driver this vendored. It rejected any
 ratio whose fractional part was not a multiple of 1/16, on the grounds that a

@@ -1,19 +1,22 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/adc.h"
+#include "board.h"
 #include "joystick.h"
 
-#define JOY_PIN_ADC_X		27		//ADC1
-#define JOY_PIN_ADC_Y		26		//ADC0
-#define JOY_PIN_BUTTON		22		//active low
+//Pins and the axis inversions come from board.h, which is the one place the
+//board's wiring is described.
+#define JOY_PIN_ADC_X		PSDL_BOARD_JOY_X_PIN
+#define JOY_PIN_ADC_Y		PSDL_BOARD_JOY_Y_PIN
+#define JOY_PIN_BUTTON		PSDL_BOARD_JOY_BUTTON_PIN
 
 #define JOY_ADC_INPUT_X		(JOY_PIN_ADC_X - 26)
 #define JOY_ADC_INPUT_Y		(JOY_PIN_ADC_Y - 26)
 #define JOY_ADC_MAX		4095		//12-bit ADC
 
 //flip these if an axis reads backwards for how your stick is wired
-#define JOY_INVERT_X		false
-#define JOY_INVERT_Y		true
+#define JOY_INVERT_X		PSDL_BOARD_JOY_INVERT_X
+#define JOY_INVERT_Y		PSDL_BOARD_JOY_INVERT_Y
 
 #define JOY_DEADZONE		0.12f		//fraction of full deflection ignored around the center
 #define JOY_CALIB_DISCARD	16		//first reads after adc_gpio_init() are still settling
