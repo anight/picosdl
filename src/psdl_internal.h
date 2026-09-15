@@ -72,15 +72,19 @@
 #endif
 
 /*
- * Master volume at startup, out of PSDL_VOLUME_UNITY (256).
+ * Master volume at startup: a tenth of PSDL_VOLUME_UNITY.
  *
  * Not unity on purpose. A MAX98357A driving a small speaker is loud, and
  * anything wrong in the mixer is loud *at full scale* - which is unpleasant and
- * makes a fault hard to work on. A quarter is enough to hear what is happening
- * without hurting. Raise it at runtime once the audio is behaving.
+ * makes a fault hard to work on. A tenth is enough to hear what is happening
+ * without hurting; it was a quarter, which was not quiet enough in practice.
+ * Raise it with PSDL_SetMasterVolume() once the audio is behaving.
+ *
+ * Written as a fraction of unity rather than as 25 so it stays a tenth if
+ * PSDL_VOLUME_SHIFT ever changes. Integer division makes it 25/256, i.e. 9.8%.
  */
 #ifndef PSDL_DEFAULT_VOLUME
-#define PSDL_DEFAULT_VOLUME 64
+#define PSDL_DEFAULT_VOLUME (PSDL_VOLUME_UNITY / 10)
 #endif
 
 /* ---------------------------------------------------------------- panics */
