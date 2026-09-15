@@ -103,7 +103,13 @@ static void on_key_event(const kbd_event_t *event) {
     fflush(stdout);
 }
 
-static void on_led_change(uint8_t led_mask) {
+/*
+ * Push the lock-key LED state to whichever transport owns the link.
+ *
+ * Not static, because a client that takes over the keyboard decoder's callbacks
+ * has to be able to pass this one straight back - see bt_app.h.
+ */
+void bt_app_set_keyboard_leds(uint8_t led_mask) {
     switch (active_link) {
         case BT_LINK_LE:      bt_le_set_leds(led_mask);      break;
         case BT_LINK_CLASSIC: bt_classic_set_leds(led_mask); break;
@@ -342,7 +348,7 @@ void bt_app_link_up(bt_link_kind_t kind) {
     }
 
     // Our lock state starts clear; push it so the keyboard's LEDs agree.
-    on_led_change(kbd_decode_led_mask());
+    bt_app_set_keyboard_leds(kbd_decode_led_mask());
 
     printf("\n=== keyboard connected over %s - start typing ===\n", bt_link_kind_name(kind));
 }
@@ -410,7 +416,7 @@ void bt_app_setup(void) {
 
     gap_set_local_name("pico-test-bt-keyboard");
 
-    kbd_decode_init(&on_key_event, &on_led_change);
+    kbd_decode_init(&on_key_event, &bt_app_set_keyboard_leds);
 
     bt_le_init();
     bt_classic_init();

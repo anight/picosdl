@@ -160,13 +160,12 @@ void psdl_backend_input_init(void)
 	bt_app_setup();
 	btstack_stdin_setup(&console_command);
 
-	/* bt_app_setup wired its own handler, which prints to the console. Take it
-	 * over: the same decoder now feeds the SDL event queue instead.
-	 *
-	 * The LED handler goes with it - bt_app.c's is static, so lock-key LEDs on
-	 * the keyboard stop being updated. That is cosmetic, and wiring it back is
-	 * a two-line change in bt_app.c when this gets folded into the game. */
-	kbd_decode_init(&on_key_event, NULL);
+	/* bt_app_setup wired its own handler, which prints to the console. Take over
+	 * the key events - the same decoder now feeds the SDL event queue instead -
+	 * but hand bt_app.c's LED handler straight back. kbd_decode_init() sets both
+	 * callbacks at once, so passing NULL here used to silently disable the
+	 * keyboard's Caps and Num Lock lights. */
+	kbd_decode_init(&on_key_event, &bt_app_set_keyboard_leds);
 
 	hci_power_control(HCI_POWER_ON);
 

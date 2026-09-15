@@ -65,6 +65,12 @@ void bt_classic_set_leds(uint8_t led_mask);
 // Bring up both transports and start looking. Call once, before HCI power on.
 void bt_app_setup(void);
 
+// Push Caps/Num/Scroll Lock state to the connected keyboard, routing to whichever
+// transport owns the link. This is bt_app.c's own kbd_led_handler_t: a client
+// that replaces the decoder's callbacks with kbd_decode_init() must pass this as
+// the LED handler, or the lock-key LEDs stop being updated.
+void bt_app_set_keyboard_leds(uint8_t led_mask);
+
 // Console commands, wired up in main.c.
 void bt_app_forget_pairing(void);
 void bt_app_search_again(void);
