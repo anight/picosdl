@@ -169,6 +169,9 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
 	if (s_arena_top + bytes > PSDL_ARENA_BYTES) {
 		SDL_SetError("picosdl: arena exhausted (%u used, %u wanted, %u total)",
 		             (unsigned)s_arena_top, (unsigned)bytes, (unsigned)PSDL_ARENA_BYTES);
+		/* The caller reports the error; this says what is holding the space,
+		 * which is the part that takes time to work out afterwards. */
+		PSDL_DumpArena();
 		return NULL;
 	}
 
@@ -372,6 +375,33 @@ void SDL_GetClipRect(SDL_Surface *surface, SDL_Rect *rect)
 }
 
 /* ------------------------------------------------------------ diagnostics */
+
+/*
+ * What is in the arena right now, entry by entry.
+ *
+ * PSDL_ReportMemory()'s total cannot distinguish demand from dead weight, and
+ * the difference is what matters: the arena is LIFO, so one long-lived entry
+ * near the bottom pins everything above it and the total reads as healthy use.
+ * Two real bugs were found by printing this - a 16.5 KB surface nothing read
+ * holding the floor, and a leak of small ones - and neither was visible in the
+ * total. `dead` means freed but not yet reclaimable, which is the interesting
+ * state: it can only happen when a caller released out of stack order.
+ */
+void PSDL_DumpArena(void)
+{
+	printf("picosdl: arena %u/%u bytes, %d entries\n",
+	       (unsigned)s_arena_top, (unsigned)PSDL_ARENA_BYTES, s_arena_depth);
+	for (int i = 0; i < s_arena_depth; ++i) {
+		size_t end = (i + 1 < s_arena_depth) ? s_arena_stack[i + 1].base
+		                                     : s_arena_top;
+		const SDL_Surface *su = s_arena_stack[i].surface;
+		printf("  [%3d] at %6u %6u bytes %-4s %dx%d\n", i,
+		       (unsigned)s_arena_stack[i].base,
+		       (unsigned)(end - s_arena_stack[i].base),
+		       s_arena_stack[i].dead ? "dead" : "live",
+		       su ? su->w : -1, su ? su->h : -1);
+	}
+}
 
 void PSDL_ReportMemory(void)
 {

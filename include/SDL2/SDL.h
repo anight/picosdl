@@ -618,6 +618,7 @@ SDL_RWops *SDL_RWFromFile(const char *file, const char *mode);
 /* Print surface-pool and arena occupancy, including peaks. This is how the
  * arena gets sized: run the real workload, read the high-water mark. */
 void     PSDL_ReportMemory(void);
+void     PSDL_DumpArena(void);
 /* Events lost to a full queue. Should stay at zero; anything else means the
  * consumer is not polling often enough. */
 unsigned PSDL_DroppedEvents(void);

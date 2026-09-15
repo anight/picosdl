@@ -66,10 +66,10 @@ never freed held 16.5 KB of the 28, the peak read 68%, and a busy frame ran out
 of the remaining 12 KB. Removing that one allocation took the peak to 11%.
 
 So when the peak is high, find out *what* is in there before raising the size.
-`PSDL_ReportMemory()` prints only totals and a depth; the entry stack knows each
-live surface's base, size and dimensions, and printing those is what made the
-problem obvious in about a minute. Worth exposing properly - a
-`PSDL_DumpArena()` beside `PSDL_ReportMemory()`.
+`PSDL_DumpArena()` prints every entry with its base, size, dimensions and whether
+it is dead, and the allocator calls it itself when it runs out - which is the one
+moment the information is always wanted. `PSDL_ReportMemory()`'s totals cannot
+distinguish demand from dead weight; the per-entry list can, and did, twice.
 
 The same applies to `PSDL_MAX_SURFACES`. It is 192 because one client needed
 about 105; the failure mode when it is too small is a panic at start-up, which
