@@ -58,6 +58,19 @@ observed, not because 28 KB is the measured high-water mark of any particular
 workload. A client should instrument a representative run - `PSDL_ReportMemory()`
 prints the peak - and size it from that.
 
+Note what "the peak" does *not* tell you. The arena is LIFO, so one long-lived
+allocation near the bottom pins everything above it whether or not those are
+still in use, and the reported figure looks like healthy demand rather than the
+dead weight it is. A client hit exactly that: a surface allocated at start-up and
+never freed held 16.5 KB of the 28, the peak read 68%, and a busy frame ran out
+of the remaining 12 KB. Removing that one allocation took the peak to 11%.
+
+So when the peak is high, find out *what* is in there before raising the size.
+`PSDL_ReportMemory()` prints only totals and a depth; the entry stack knows each
+live surface's base, size and dimensions, and printing those is what made the
+problem obvious in about a minute. Worth exposing properly - a
+`PSDL_DumpArena()` beside `PSDL_ReportMemory()`.
+
 The same applies to `PSDL_MAX_SURFACES`. It is 192 because one client needed
 about 105; the failure mode when it is too small is a panic at start-up, which
 is at least loud.
