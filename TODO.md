@@ -44,10 +44,12 @@ what it needs.
 `psdl_backend_video_present()` takes `(pixels, w, h, pitch)` with no rectangle,
 but `dispDrawBuffer()` in `vendor/pio-st7789` is already
 `(framebuffer, size, const struct Rect *rect, stride)`. The panel link is the
-bottleneck, not the CPU: the ST7789 program shifts 2 cycles per bit at 16bpp, so a
-320x200 frame is 64000 x 32 cycles, or **16 ms at 128 MHz** - against a measured
-22 ms frame in the client that drives it hardest. Most of that is spent resending
-pixels that did not change.
+bottleneck, not the CPU. The ST7789 program clocks SCK from sideset across a
+two-instruction loop, so SCK is structurally sysclk/2 with no divider - but the
+per-pixel loop costs 34 cycles, not 32, because `SET Y,15` and the outer `JMP X--`
+each add one with the clock parked. A 320x200 frame is therefore 64000 x 34 cycles,
+or **15.8 ms at 138 MHz** - against a measured 21 ms frame in the client that drives
+it hardest. Most of that is spent resending pixels that did not change.
 
 The work is to add the rectangle to the backend interface, implement the SDL2
 entry point on top of it, and pass the rects through. Games that track dirty

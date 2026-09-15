@@ -27,12 +27,40 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* The system clock. 128 MHz, not the RP2040 default of 125 or the RP2350
- * default of 150, because both vendored drivers were characterised at it: it
- * makes the I2S divider exact at 8 kHz and it is the clock the ST7789 PIO
- * timings were measured at. Callers must set this before stdio_init_all() -
- * see the note in the demo's main(). */
-#define PSDL_PICO_SYS_CLOCK_KHZ 128000
+/*
+ * The system clock. 138 MHz.
+ *
+ * Note which way round this is: the RP2350's SDK default is 150 MHz, so this is
+ * a *down*clock, not an overclock. That also means the QMI flash timing the
+ * bootrom set up for 150 MHz stays valid, and nothing about the core is being
+ * pushed. It was 128 MHz, chosen because both vendored drivers had been
+ * characterised there.
+ *
+ * 138 was picked by enumerating every frequency the SDK's PLL search can
+ * actually reach - check_sys_clock_khz(), 12 MHz reference, fbdiv 16..320, VCO
+ * 750..1600 MHz, two postdivs - and scoring each on the sample rate the I2S
+ * divider lands on. 19 are reachable between 130 and 140 MHz; 138 is the best of
+ * them, and better than 128 was:
+ *
+ *   sysclk    I2S divider   rounded to 16.8   actual rate    error
+ *   128 MHz     45.3515        45.3516        22049.957 Hz   2.0 ppm
+ *   138 MHz     48.8946        48.8945        22050.012 Hz   0.5 ppm
+ *
+ * It is VCO 1380 MHz with postdivs 5 and 2. What it buys, at 7.8% more clock:
+ * the ST7789 push of a full 320x200 frame drops from 17.00 ms to 15.77 ms, and
+ * core 1 gets the same 7.8% more room for the mixer.
+ *
+ * The cost is the panel, and it is the only thing here being overclocked. SCK is
+ * structurally sysclk/2 - the ST7789 PIO program clocks from sideset across a
+ * two-instruction loop, so there is no divider involved - which takes it from
+ * 64.0 MHz to 69.0 MHz against a 62.5 MHz datasheet maximum. 64 was already 2.4%
+ * over and known good on this panel; 69 is 10.4% over. If a panel ever shows
+ * torn or speckled pixels, this is the first number to put back.
+ *
+ * Callers must set this before stdio_init_all() - see the note in the demo's
+ * main().
+ */
+#define PSDL_PICO_SYS_CLOCK_KHZ 138000
 
 /* The panel is 320x240 and the game's canvas is 320x200, so the picture is
  * letterboxed rather than stretched. */

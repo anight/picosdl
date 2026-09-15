@@ -27,13 +27,14 @@ float PioI2S_calculateClockDivision(struct PioI2S* self) {
  * 1/16, on the grounds that a PIO clock divider has "16 fractional bits". It
  * has eight - the divider is 16.8 fixed point - so the representable step is
  * 1/256, and the check was both wrong about the hardware and far stricter than
- * it needed to be. 8 kHz at 128 MHz happens to divide exactly, so nothing
+ * it needed to be. 8 kHz divides exactly at both 128 and 138 MHz, so nothing
  * noticed.
  *
- * That matters here because the game wants a real sample rate. 22050 Hz at
- * 128 MHz needs a divider of 45.3514, which the old check panicked on; rounded
- * to the nearest 1/256 it gives 22049.95 Hz, an error of 0.0002% - four orders
- * of magnitude below anything audible.
+ * That matters here because the game wants a real sample rate. 22050 Hz at the
+ * 138 MHz this runs at needs a divider of 48.8946, which the old check panicked
+ * on; rounded to the nearest 1/256 it gives 22050.012 Hz, an error of 0.5 ppm -
+ * four orders of magnitude below anything audible. (At the 128 MHz this was
+ * written for it was 45.3515 and 2.0 ppm, so the clock change improved it.)
  *
  * So: check the range the hardware can actually express, and warn on the error
  * that rounding will cause rather than on whether it is zero.

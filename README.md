@@ -232,7 +232,9 @@ event-ring overflow.
 
 ## The hardware
 
-**`pico2_w` (RP2350) at 128 MHz.** The clock is not arbitrary: it makes the I2S
+**`pico2_w` (RP2350) at 138 MHz.** Below the SDK's 150 MHz default, so the core is
+not overclocked - the panel is, at sysclk/2 = 69 MHz against a 62.5 MHz maximum.
+The clock is not arbitrary: it makes the I2S
 divider exactly 125.0 at 8 kHz, and it is the clock the ST7789 PIO timings were
 measured at. Override the board with `-DPICO_BOARD=pico_w`; that part still
 builds, but it is short of RAM and flash.

@@ -19,9 +19,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     set(PICOSDL_STANDALONE TRUE)
 
-    # Pico 2 W (RP2350) by default. The system clock stays at 128 MHz: that is
-    # what the ST7789 PIO timings were measured at, and it keeps the I2S
-    # divider exact at 8 kHz. Override with -DPICO_BOARD=pico_w.
+    # Pico 2 W (RP2350) by default. The system clock is 138 MHz - below the
+    # SDK's 150 MHz default, so the core is not overclocked; see the note on
+    # PSDL_PICO_SYS_CLOCK_KHZ for what is. It keeps the I2S divider exact at
+    # 8 kHz and within 0.5 ppm at 22050. Override with -DPICO_BOARD=pico_w.
     set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
     # Speed over size: -O3. This is the SDK's default anyway, but it is stated
