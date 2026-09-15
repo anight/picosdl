@@ -73,6 +73,67 @@ SDL_bool SDL_IsGameController(int joystick_index)
 	return SDL_FALSE;   /* it is a bare analog stick, not a mapped pad */
 }
 
+/*
+ * Game controller and haptics: present so the game links, inert at runtime.
+ *
+ * Because SDL_IsGameController() is false the game never opens one, and no
+ * SDL_CONTROLLER* event is ever pushed onto the ring, so its controller
+ * branches are unreachable rather than merely harmless. The stick reaches the
+ * game through the joystick calls above.
+ */
+SDL_GameController *SDL_GameControllerOpen(int joystick_index)
+{
+	(void)joystick_index;
+	return NULL;
+}
+
+void SDL_GameControllerClose(SDL_GameController *gamecontroller)
+{
+	(void)gamecontroller;
+}
+
+SDL_GameController *SDL_GameControllerFromInstanceID(Sint32 joyid)
+{
+	(void)joyid;
+	return NULL;
+}
+
+int SDL_GameControllerAddMappingsFromFile(const char *file)
+{
+	(void)file;
+	return -1;   /* no mapping database, and no filesystem to hold one */
+}
+
+int SDL_GameControllerRumble(SDL_GameController *gamecontroller,
+                             Uint16 low, Uint16 high, Uint32 ms)
+{
+	(void)gamecontroller; (void)low; (void)high; (void)ms;
+	return -1;
+}
+
+SDL_Haptic *SDL_HapticOpen(int device_index)
+{
+	(void)device_index;
+	return NULL;
+}
+
+void SDL_HapticClose(SDL_Haptic *haptic)
+{
+	(void)haptic;
+}
+
+int SDL_HapticRumbleInit(SDL_Haptic *haptic)
+{
+	(void)haptic;
+	return -1;
+}
+
+int SDL_HapticRumblePlay(SDL_Haptic *haptic, float strength, Uint32 length)
+{
+	(void)haptic; (void)strength; (void)length;
+	return -1;
+}
+
 /* ---------------------------------------------------------------- misc */
 
 int SDL_ShowCursor(int toggle)

@@ -31,10 +31,25 @@
 #define PSDL_ARENA_BYTES (28 * 1024)
 #endif
 
-/* Every surface that exists at once: the screen buffers, whatever the caller
- * creates, and one header per live arena surface. */
+/*
+ * Every surface that exists at once: the screen buffers, whatever the caller
+ * creates, and one header per live arena surface.
+ *
+ * The game's demand, counted rather than guessed:
+ *
+ *   2    the window surface and the offscreen buffer
+ *   100  the built-in font, one per glyph (0x20..0x83). These are permanent
+ *        and their pixels are static, but each still needs a header.
+ *   ~50  peels, capped by add_peel()
+ *   few  dialogs and transient blits
+ *
+ * 96 was sized before the font went through picosdl and is two short of the
+ * font alone, which showed up as an immediate panic at start-up rather than
+ * anything subtle. 192 covers the above with room to spare, at about 68 bytes
+ * a header - 13 KB, against 520 KB of SRAM.
+ */
 #ifndef PSDL_MAX_SURFACES
-#define PSDL_MAX_SURFACES 96
+#define PSDL_MAX_SURFACES 192
 #endif
 
 /* Full-screen buffers, which get their own pool rather than the arena. SDLPoP

@@ -42,7 +42,9 @@ typedef struct {
 	int          dead;
 } arena_entry_t;
 
+#ifndef PSDL_ARENA_MAX_ENTRIES
 #define PSDL_ARENA_MAX_ENTRIES 64
+#endif
 static arena_entry_t s_arena_stack[PSDL_ARENA_MAX_ENTRIES];
 static int           s_arena_depth;
 

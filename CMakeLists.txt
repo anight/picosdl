@@ -4,60 +4,51 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
-if(WIN32)
-    set(USERHOME $ENV{USERPROFILE})
+
+#
+# picosdl can be built two ways, and both have to work:
+#
+#   * standalone, as its own project - `cmake -S picosdl -B build` - which is
+#     how its demo and its tests are built, and how another game would start;
+#   * as a subdirectory of a game that has already initialised the Pico SDK,
+#     which is what picopop's src/CMakeLists.txt does.
+#
+# Only the first may call project()/pico_sdk_init(); calling them twice is an
+# error. PICOSDL_STANDALONE records which mode we are in.
+#
+if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    set(PICOSDL_STANDALONE TRUE)
+
+    # Pico 2 W (RP2350) by default. The system clock stays at 128 MHz: that is
+    # what the ST7789 PIO timings were measured at, and it keeps the I2S
+    # divider exact at 8 kHz. Override with -DPICO_BOARD=pico_w.
+    set(PICO_BOARD pico2_w CACHE STRING "Board type")
+
+    include(${CMAKE_CURRENT_LIST_DIR}/cmake/pico_sdk_bootstrap.cmake)
+    project(picosdl C CXX ASM)
+    pico_sdk_init()
 else()
-    set(USERHOME $ENV{HOME})
+    set(PICOSDL_STANDALONE FALSE)
 endif()
-set(sdkVersion 2.2.0)
-set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.2.0-a4)
-set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
-if (EXISTS ${picoVscode})
-    include(${picoVscode})
-endif()
-# ====================================================================================
-
-# Pico 2 W (RP2350). Override with -DPICO_BOARD=pico_w for the original board.
-# The system clock stays at 128 MHz: that is what the ST7789 PIO timings were
-# measured at, and it keeps the I2S divider honest. The display driver still
-# pokes PIO registers directly; gpio_set_function() is used for the mux so the
-# RP2350 pad-isolation latch is cleared.
-set(PICO_BOARD pico2_w CACHE STRING "Board type")
-
-if(NOT PICO_SDK_PATH)
-    set(PICO_SDK_PATH "${USERHOME}/.pico-sdk/sdk/${sdkVersion}")
-endif()
-if(NOT PICO_TOOLCHAIN_PATH)
-    set(PICO_TOOLCHAIN_PATH "${USERHOME}/.pico-sdk/toolchain/${toolchainVersion}")
-endif()
-if(NOT EXISTS "${PICO_SDK_PATH}/pico_sdk_init.cmake")
-    message(FATAL_ERROR "Pico SDK not found at '${PICO_SDK_PATH}' - set PICO_SDK_PATH")
-endif()
-
-include(${PICO_SDK_PATH}/pico_sdk_init.cmake)
-
-project(picosdl C CXX ASM)
-
-pico_sdk_init()
 
 if (NOT TARGET pico_btstack_cyw43)
     message(FATAL_ERROR
         "No Bluetooth support for PICO_BOARD='${PICO_BOARD}'. Use pico_w or pico2_w.")
 endif()
 
-# The two sibling projects this builds on. Their sources are referenced in place
-# rather than copied, so fixes there do not have to be mirrored here.
-set(PICOPOP_ROOT ${CMAKE_CURRENT_LIST_DIR}/..)
-set(LCD_DRIVER_DIR ${PICOPOP_ROOT}/pico-test-st7789/Raspberry-Pi-Pico-PIO-LCD-Driver)
-set(BT_KEYBOARD_DIR ${PICOPOP_ROOT}/pico-test-bt-keyboard/src)
+# The hardware drivers live inside picosdl now, so the library is self-contained
+# and carries no dependency on any particular game.
+#
+#   vendor/pio-st7789   the ST7789 PIO driver, a submodule of its own repo
+#   backend/pico/bt     the Bluetooth HID keyboard, vendored source
+#
+set(LCD_DRIVER_DIR ${CMAKE_CURRENT_LIST_DIR}/vendor/pio-st7789)
+set(BT_KEYBOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/backend/pico/bt)
 
-foreach(dir ${LCD_DRIVER_DIR} ${BT_KEYBOARD_DIR})
-    if(NOT EXISTS ${dir})
-        message(FATAL_ERROR "Expected to find ${dir} - is the picopop tree complete?")
-    endif()
-endforeach()
+if(NOT EXISTS ${LCD_DRIVER_DIR}/dispPioSt7789.c)
+    message(FATAL_ERROR
+        "vendor/pio-st7789 is empty - run: git submodule update --init --recursive")
+endif()
 
 # ----------------------------------------------------------------- picosdl
 
@@ -135,81 +126,3 @@ set_source_files_properties(
     PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra"
 )
 
-# -------------------------------------------------------------------- demo
-
-set(SDLPOP_DIR ${PICOPOP_ROOT}/SDLPoP/src)
-
-add_executable(picosdl-demo
-    demo/main.c
-    demo/font5x7.c
-    demo/game_glue.c
-
-    # The game's own Adlib music player, used unmodified, reading the tunes and
-    # the instrument bank straight out of the generated resources.
-    ${SDLPOP_DIR}/midi.c
-    ${SDLPOP_DIR}/resources.c
-)
-
-# Which OPL emulator midi.c drives.
-#
-#   dbopl  DOSBox's, the default. Measured on the title theme at 938
-#          instructions per output sample against Nuked's 5583 - about 6x
-#          cheaper - and 5176 bytes of chip state against Nuked's 20776. It is
-#          the less exact chip model: level-matched to 0.06 dB with a 0.9995
-#          loudness-envelope correlation, but ~1.3 dB brighter above 6 kHz.
-#   nuked  Nuked OPL3 1.7.4, what SDLPoP ships, with picopop's silent-slot and
-#          unfolded-table optimisations. More faithful, and too expensive for an
-#          RP2040 at ~123M instructions/second.
-#
-# See PLAN.md section 8.
-set(PICOPOP_OPL dbopl CACHE STRING "OPL emulator: dbopl or nuked")
-set_property(CACHE PICOPOP_OPL PROPERTY STRINGS dbopl nuked)
-
-if (PICOPOP_OPL STREQUAL "dbopl")
-    target_sources(picosdl-demo PRIVATE
-        ${SDLPOP_DIR}/dbopl.cpp
-        ${SDLPOP_DIR}/dbopl_adapter.cpp)
-    # opl3.h switches on this: midi.c keeps including it, but gets a token
-    # opl3_chip instead of Nuked's 19 KB struct, and opl3.c compiles to nothing.
-    target_compile_definitions(picosdl-demo PRIVATE PICOPOP_USE_DBOPL=1)
-    # Vendored C++ with no runtime needs: no exceptions, no RTTI, no libstdc++.
-    set_source_files_properties(${SDLPOP_DIR}/dbopl.cpp ${SDLPOP_DIR}/dbopl_adapter.cpp
-        PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti;-fno-threadsafe-statics")
-elseif (PICOPOP_OPL STREQUAL "nuked")
-    target_sources(picosdl-demo PRIVATE ${SDLPOP_DIR}/opl3.c)
-    target_compile_definitions(picosdl-demo PRIVATE PICOPOP_USE_DBOPL=0)
-else()
-    message(FATAL_ERROR "PICOPOP_OPL must be dbopl or nuked, not '${PICOPOP_OPL}'")
-endif()
-message(STATUS "OPL emulator: ${PICOPOP_OPL}")
-
-target_link_libraries(picosdl-demo PRIVATE picosdl)
-target_include_directories(picosdl-demo PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/src
-    ${SDLPOP_DIR}
-)
-
-# midi.c uses log2f/powf.
-target_link_libraries(picosdl-demo PRIVATE pico_float)
-
-# Our own code only; SDLPoP's is not warning-clean under -Wextra.
-set_source_files_properties(demo/main.c demo/font5x7.c demo/game_glue.c
-    PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
-
-# parse_midi() is the one thing in this firmware that uses the heap: it callocs
-# a track array, then reallocs the event array once per event. The title theme
-# is 436 events (~7 KB at 16 bytes each); the largest tune in the game is
-# several times that.
-#
-# 20 KB was the Pico W ceiling (32 KB overflowed RAM by 2228 bytes). The Pico 2 W
-# has 520 KB, so this is no longer load-bearing; it is kept as a measured bound
-# for parse_midi() until the tunes are pre-parsed at build time (PLAN.md 3.3).
-# The demo reports its peak heap use so the number is measured rather than assumed.
-target_compile_definitions(picosdl-demo PRIVATE PICO_HEAP_SIZE=20480)
-
-# Console on both UART0 (GP0/GP1, what the debugprobe bridges) and USB CDC, so
-# either cable works.
-pico_enable_stdio_uart(picosdl-demo 1)
-pico_enable_stdio_usb(picosdl-demo 1)
-
-pico_add_extra_outputs(picosdl-demo)

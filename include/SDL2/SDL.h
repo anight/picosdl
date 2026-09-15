@@ -314,7 +314,12 @@ typedef enum {
 	SDL_SCANCODE_LCTRL = 224, SDL_SCANCODE_LSHIFT, SDL_SCANCODE_LALT,
 	SDL_SCANCODE_LGUI, SDL_SCANCODE_RCTRL, SDL_SCANCODE_RSHIFT,
 	SDL_SCANCODE_RALT, SDL_SCANCODE_RGUI,
-	SDL_SCANCODE_MUTE = 262, SDL_SCANCODE_VOLUMEUP, SDL_SCANCODE_VOLUMEDOWN,
+	/* SDL2's own values. MUTE and AUDIOMUTE are genuinely two different
+	 * scancodes there - 127 is the HID keyboard-page Mute key, 262 is the
+	 * consumer-page one - and the game switches on both in the same statement,
+	 * so collapsing them to one value is a duplicate-case error. */
+	SDL_SCANCODE_MUTE = 127, SDL_SCANCODE_VOLUMEUP = 128,
+	SDL_SCANCODE_VOLUMEDOWN = 129,
 	SDL_SCANCODE_AUDIOMUTE = 262,
 	SDL_NUM_SCANCODES = 288
 } SDL_Scancode;
@@ -399,6 +404,28 @@ typedef struct SDL_UserEvent {
 } SDL_UserEvent;
 typedef struct SDL_QuitEvent { Uint32 type; Uint32 timestamp; } SDL_QuitEvent;
 
+/*
+ * Game-controller and text-input events. Nothing here ever produces one - see
+ * the note above SDL_GameControllerOpen - but the game switches on them, so
+ * the members have to exist for it to compile unmodified.
+ */
+typedef struct SDL_ControllerAxisEvent {
+	Uint32 type; Uint32 timestamp; Sint32 which;
+	Uint8 axis; Uint8 padding1, padding2, padding3;
+	Sint16 value; Uint16 padding4;
+} SDL_ControllerAxisEvent;
+typedef struct SDL_ControllerButtonEvent {
+	Uint32 type; Uint32 timestamp; Sint32 which;
+	Uint8 button; Uint8 state; Uint8 padding1, padding2;
+} SDL_ControllerButtonEvent;
+typedef struct SDL_ControllerDeviceEvent {
+	Uint32 type; Uint32 timestamp; Sint32 which;
+} SDL_ControllerDeviceEvent;
+typedef struct SDL_TextInputEvent {
+	Uint32 type; Uint32 timestamp; Uint32 windowID;
+	char text[32];
+} SDL_TextInputEvent;
+
 typedef union SDL_Event {
 	Uint32            type;
 	SDL_CommonEvent   common;
@@ -406,6 +433,10 @@ typedef union SDL_Event {
 	SDL_KeyboardEvent key;
 	SDL_JoyAxisEvent  jaxis;
 	SDL_JoyButtonEvent jbutton;
+	SDL_ControllerAxisEvent   caxis;
+	SDL_ControllerButtonEvent cbutton;
+	SDL_ControllerDeviceEvent cdevice;
+	SDL_TextInputEvent text;
 	SDL_UserEvent     user;
 	SDL_QuitEvent     quit;
 	Uint8             padding[56];
@@ -437,7 +468,60 @@ void          SDL_JoystickClose(SDL_Joystick *joystick);
 Sint16        SDL_JoystickGetAxis(SDL_Joystick *joystick, int axis);
 Uint8         SDL_JoystickGetButton(SDL_Joystick *joystick, int button);
 int           SDL_JoystickRumble(SDL_Joystick *joystick, Uint16 low, Uint16 high, Uint32 ms);
-SDL_bool      SDL_IsGameController(int joystick_index);
+
+/*
+ * Game controller and haptics.
+ *
+ * These exist so the game compiles and links unmodified; none of them do
+ * anything. SDL_IsGameController() returns false, so SDLPoP never opens a
+ * controller and falls through to its joystick path, which is what the board's
+ * analog stick actually is. The enumerators are SDL's own values, in SDL's
+ * order, so that a future mapping layer can be dropped in without touching the
+ * game's switch statements.
+ */
+typedef enum {
+	SDL_CONTROLLER_AXIS_INVALID = -1,
+	SDL_CONTROLLER_AXIS_LEFTX = 0,
+	SDL_CONTROLLER_AXIS_LEFTY,
+	SDL_CONTROLLER_AXIS_RIGHTX,
+	SDL_CONTROLLER_AXIS_RIGHTY,
+	SDL_CONTROLLER_AXIS_TRIGGERLEFT,
+	SDL_CONTROLLER_AXIS_TRIGGERRIGHT,
+	SDL_CONTROLLER_AXIS_MAX
+} SDL_GameControllerAxis;
+
+typedef enum {
+	SDL_CONTROLLER_BUTTON_INVALID = -1,
+	SDL_CONTROLLER_BUTTON_A = 0,
+	SDL_CONTROLLER_BUTTON_B,
+	SDL_CONTROLLER_BUTTON_X,
+	SDL_CONTROLLER_BUTTON_Y,
+	SDL_CONTROLLER_BUTTON_BACK,
+	SDL_CONTROLLER_BUTTON_GUIDE,
+	SDL_CONTROLLER_BUTTON_START,
+	SDL_CONTROLLER_BUTTON_LEFTSTICK,
+	SDL_CONTROLLER_BUTTON_RIGHTSTICK,
+	SDL_CONTROLLER_BUTTON_LEFTSHOULDER,
+	SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+	SDL_CONTROLLER_BUTTON_DPAD_UP,
+	SDL_CONTROLLER_BUTTON_DPAD_DOWN,
+	SDL_CONTROLLER_BUTTON_DPAD_LEFT,
+	SDL_CONTROLLER_BUTTON_DPAD_RIGHT,
+	SDL_CONTROLLER_BUTTON_MAX
+} SDL_GameControllerButton;
+
+SDL_bool           SDL_IsGameController(int joystick_index);
+SDL_GameController *SDL_GameControllerOpen(int joystick_index);
+void               SDL_GameControllerClose(SDL_GameController *gamecontroller);
+SDL_GameController *SDL_GameControllerFromInstanceID(Sint32 joyid);
+int                SDL_GameControllerAddMappingsFromFile(const char *file);
+int                SDL_GameControllerRumble(SDL_GameController *gamecontroller,
+                                            Uint16 low, Uint16 high, Uint32 ms);
+
+SDL_Haptic *SDL_HapticOpen(int device_index);
+void        SDL_HapticClose(SDL_Haptic *haptic);
+int         SDL_HapticRumbleInit(SDL_Haptic *haptic);
+int         SDL_HapticRumblePlay(SDL_Haptic *haptic, float strength, Uint32 length);
 
 /* --------------------------------------------------------------- timer */
 
@@ -557,9 +641,20 @@ void     SDL_free(void *mem);
 
 typedef struct SDL_version { Uint8 major, minor, patch; } SDL_version;
 void SDL_GetVersion(SDL_version *ver);
+/*
+ * The SDL2 API level this implements.
+ *
+ * The patch level matters to callers, not just to humans: SDLPoP's init_digi()
+ * checks for SDL older than 2.0.4 and, if it finds it, asks for AUDIO_U8 to
+ * work around a resampling bug in those versions
+ * (https://bugzilla.libsdl.org/show_bug.cgi?id=2389). picosdl does not have
+ * that bug - it does no resampling at all, and takes S16 stereo straight to
+ * the I2S DMA - so claiming 2.0.0 made the game request a format that is not
+ * supported here and lose its audio entirely.
+ */
 #define SDL_MAJOR_VERSION 2
 #define SDL_MINOR_VERSION 0
-#define SDL_PATCHLEVEL    0
+#define SDL_PATCHLEVEL    22
 #define SDL_VERSION(x) do { (x)->major = 2; (x)->minor = 0; (x)->patch = 0; } while (0)
 #define SDL_VERSION_ATLEAST(X, Y, Z) \
 	((SDL_MAJOR_VERSION >= (X)) && (SDL_MINOR_VERSION >= (Y)) && (SDL_PATCHLEVEL >= (Z)))

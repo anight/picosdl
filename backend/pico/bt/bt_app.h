@@ -1,0 +1,73 @@
+/*
+ * Interface between the connection manager (bt_app.c) and the two transports.
+ *
+ * A Bluetooth keyboard is either a Classic BR/EDR HID device or a Bluetooth LE
+ * HID-over-GATT device, and you cannot tell which from the outside. bt_app.c
+ * searches both, alternating, and hands the winner to the matching transport.
+ */
+#ifndef PICO_TEST_BT_KEYBOARD_BT_APP_H
+#define PICO_TEST_BT_KEYBOARD_BT_APP_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "btstack.h"
+
+typedef enum {
+    BT_LINK_NONE = 0,
+    BT_LINK_LE,
+    BT_LINK_CLASSIC,
+} bt_link_kind_t;
+
+const char *bt_link_kind_name(bt_link_kind_t kind);
+
+// -- called by the transports, implemented by bt_app.c ---------------------
+
+// A plausible keyboard turned up during a search. First one wins.
+void bt_app_device_found(bt_link_kind_t kind, const bd_addr_t addr,
+                         bd_addr_type_t addr_type, const char *name);
+
+// A search phase ran to completion without finding anything.
+void bt_app_search_finished(bt_link_kind_t kind);
+
+// The device we are connecting to turned out to have a different identity
+// address than the one it advertised (LE privacy). Remember the identity one,
+// since the advertised address rotates and will not be valid next time.
+void bt_app_note_identity_address(bt_link_kind_t kind, const bd_addr_t addr,
+                                  bd_addr_type_t addr_type);
+
+// The keyboard is connected and delivering reports.
+void bt_app_link_up(bt_link_kind_t kind);
+
+// The link dropped, or an attempt to bring it up failed.
+void bt_app_link_down(bt_link_kind_t kind, const char *reason);
+
+// -- LE transport (bt_le.c) ------------------------------------------------
+
+void bt_le_init(void);
+void bt_le_start_search(void);
+void bt_le_stop_search(void);
+void bt_le_connect(const bd_addr_t addr, bd_addr_type_t addr_type);
+void bt_le_disconnect(void);
+void bt_le_set_leds(uint8_t led_mask);
+
+// -- Classic transport (bt_classic.c) --------------------------------------
+
+void bt_classic_init(void);
+void bt_classic_start_search(void);
+void bt_classic_stop_search(void);
+void bt_classic_connect(const bd_addr_t addr);
+void bt_classic_disconnect(void);
+void bt_classic_set_leds(uint8_t led_mask);
+
+// -- connection manager (bt_app.c) -----------------------------------------
+
+// Bring up both transports and start looking. Call once, before HCI power on.
+void bt_app_setup(void);
+
+// Console commands, wired up in main.c.
+void bt_app_forget_pairing(void);
+void bt_app_search_again(void);
+void bt_app_print_status(void);
+
+#endif // PICO_TEST_BT_KEYBOARD_BT_APP_H
