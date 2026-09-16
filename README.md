@@ -411,12 +411,14 @@ names from there too. Porting to a differently wired board, or changing the cloc
 is that one file. The clock comment in it lists which reachable frequencies are
 worth wanting and what each does to the panel, the frame time and the sample rate.
 
-**`pico2_w` (RP2350) at 138 MHz.** Below the SDK's 150 MHz default, so the core is
-not overclocked - the panel is, at sysclk/2 = 69 MHz against a 62.5 MHz maximum.
-The clock is not arbitrary: it makes the I2S
-divider exactly 125.0 at 8 kHz, and it is the clock the ST7789 PIO timings were
-measured at. Override the board with `-DPICO_BOARD=pico_w`; that part still
-builds, but it is short of RAM and flash.
+**`pico2_w` (RP2350) at 125 MHz.** Below the SDK's 150 MHz default, so the core is
+not overclocked, and SCK is sysclk/2 = 62.5 MHz, exactly the ST7789 maximum, so
+the panel is not either. Earlier defaults of 128 and 138 MHz ran the panel 2.4%
+and 10.4% over; both worked here, neither is something a different panel has to
+tolerate. The clock is not arbitrary in the other direction either: it keeps the
+I2S divider exact at 8 kHz (122.070312) and within 12 ppm at 22050. Override the
+board with `-DPICO_BOARD=pico_w`; that part still builds, but it is short of RAM
+and flash.
 
 `set_sys_clock_khz()` must be called **before** `stdio_init_all()`. It re-parents
 `clk_peri` off `clk_sys`, and stdio derives the UART divisor from `clk_peri` when

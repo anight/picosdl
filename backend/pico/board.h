@@ -18,7 +18,7 @@
  * ======================================================================== */
 
 /*
- * 138 MHz.
+ * 125 MHz.
  *
  * ---- Before changing this, read the rest of this comment. ----
  *
@@ -37,11 +37,13 @@
  *
  *        SCK = sysclk / 2, always.
  *
- *    The ST7789 datasheet maximum is 62.5 MHz, i.e. 125 MHz of system clock. At
- *    138 MHz, SCK is 69.0 MHz - 10.4% over. That works on the panel this was
- *    developed against and is the main thing a different panel might not tolerate.
- *    The failure looks like torn, speckled or shifted pixels, not a blank screen.
- *    If you see that, come here first and lower this number.
+ *    The ST7789 datasheet maximum is 62.5 MHz, i.e. 125 MHz of system clock, so
+ *    the current value puts SCK exactly at spec with nothing overclocked at either
+ *    end. Earlier defaults did not: 128 MHz ran SCK 2.4% over and 138 MHz 10.4%
+ *    over, both of which worked on the panel this was developed against and
+ *    neither of which a different panel is obliged to tolerate. If you raise this
+ *    and see torn, speckled or shifted pixels - not a blank screen - that is what
+ *    you are looking at, and this is the number to bring back down.
  *
  * 2. HOW LONG A FRAME TAKES TO PUSH, which is what the frame rate is made of.
  *
@@ -51,8 +53,9 @@
  *
  *        push = 64000 x 34 / sysclk
  *
- *    which is 15.8 ms at 138 MHz against a measured ~21 ms frame. The link, not
- *    the CPU, is what the frame rate is waiting for.
+ *    which is 17.4 ms at 125 MHz, and a ceiling of 57 fps if nothing else took any
+ *    time at all. The link, not the CPU, is what the frame rate is waiting for, so
+ *    this line moves the frame rate about as directly as anything can.
  *
  * 3. THE I2S SAMPLE RATE, which is computed at run time and can reject you.
  *
@@ -63,8 +66,9 @@
  *    that are still worth avoiding, and they do not vary smoothly with the clock.
  *
  * 4. HOW MUCH ROOM CORE 1 HAS TO MIX. Linear in the clock. The game reports it as
- *    a percentage of each audio block's budget; at 138 MHz it sits at 21-22%
- *    average.
+ *    a percentage of each audio block's budget. Measured over the opening music:
+ *    24-25% average and 29-37% peak at 125 MHz, against 21-22% average at
+ *    138 MHz. Peak is the number with the deadline attached, not average.
  *
  * ---- Choosing a value ----
  *
@@ -79,12 +83,12 @@
  *     sysclk     SCK      push    22050 Hz     panel
  *     101000   50.5 MHz  21.54ms   0.2 ppm   within spec
  *     115200   57.6 MHz  18.89ms   2.0 ppm   within spec
- *     125000   62.5 MHz  17.41ms  11.6 ppm   exactly at spec
- *     128000   64.0 MHz  17.00ms   2.0 ppm   2.4% over   (the previous default)
+ *     125000   62.5 MHz  17.41ms  11.6 ppm   exactly at spec  <-- current
+ *     128000   64.0 MHz  17.00ms   2.0 ppm   2.4% over
  *     130800   65.4 MHz  16.64ms   4.6 ppm   4.6% over
  *     135000   67.5 MHz  16.12ms   8.3 ppm   8.0% over
  *     136500   68.2 MHz  15.94ms   3.8 ppm   9.1% over
- *     138000   69.0 MHz  15.77ms   0.5 ppm  10.4% over   <-- current
+ *     138000   69.0 MHz  15.77ms   0.5 ppm  10.4% over   (a previous default)
  *     139500   69.8 MHz  15.60ms   4.8 ppm  11.7% over
  *     145200   72.6 MHz  14.99ms   5.2 ppm  16.2% over
  *     148000   74.0 MHz  14.70ms   2.7 ppm  18.4% over, and near the 150 MHz SDK
@@ -101,7 +105,7 @@
  * re-parents clk_peri, and a UART set up at the old clock then has the wrong
  * baud. See the note in the demo's main().
  */
-#define PSDL_BOARD_SYS_CLOCK_KHZ 138000
+#define PSDL_BOARD_SYS_CLOCK_KHZ 125000
 
 /* ========================================================================
  * Display - ST7789 over PIO0, 4-wire SPI
