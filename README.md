@@ -103,6 +103,42 @@ zero, so a stick at rest would otherwise overwrite a deflected one milliseconds
 later. A client that finds a controller stops listening to the joystick, so without
 this the board's stick would go dead the moment a pad was plugged in.
 
+### The letterbox bands are a status line
+
+The panel is 320x240 and a 320x200 canvas is letterboxed into it, leaving two
+20-pixel strips that nothing otherwise writes to. `PSDL_StatusBands(SDL_TRUE, fg, bg)`
+puts them to use: the header carries picosdl's own frame rate and the load on both
+cores, and the footer carries whatever `PSDL_SetFooterText()` was given, centred.
+Colours are palette *indices*, because only the client knows what its palette means.
+
+Two facts about the panel shape this.
+
+Indices are expanded through the CLUT by the PIO **at push time**, so once a band is
+pushed its pixels are fixed RGB and later palette changes do not touch them — unlike
+the canvas, which is re-pushed every frame and therefore follows the CLUT. A band
+drawn before the client set up its palette would sit there as black on black for
+ever. So both bands are repainted once a second along with the figures, which keeps
+them legible through fades and start-up with no notion of "the palette changed".
+
+And the push has to be ordered against the frame or the two transfers interleave and
+both tear. `dispDrawBuffer()` waits for whatever is in flight before it starts, so the
+bands go out from inside `present()`, *before* the canvas is handed over: the canvas
+transfer is then the one still running when present returns, so the overlap that buys
+the frame rate survives and only the band push blocks — 1.6 ms, once a second.
+Pushing them every frame would instead cost 20% of the frame rate.
+
+A consequence worth knowing: the bands update only when the client presents a frame.
+Through a long timed wait that draws nothing, the header holds its last value. That is
+the price of not having a second, unsynchronised writer to the panel.
+
+**The load figures.** Core 1 runs the mixer and nothing else, so time inside the
+client's audio callback over an interval *is* its load. Core 0 idles in two places,
+both of which picosdl can see: inside `SDL_Delay()`, which is a real WFE sleep and is
+how a client paces a frame, and blocked waiting for the panel transfer. Its load is
+the complement of the two together — counting only the panel wait reads about double.
+On the client driving this hardest, core 0 sits near 10% at 56 fps, which is the frame
+rate being panel-bound rather than CPU-bound, visible as a measurement.
+
 ### The serial console
 
 Single keypresses in the serial terminal, no Enter. `h` lists what the build has:

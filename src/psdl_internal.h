@@ -101,6 +101,10 @@ void psdl_panic(const char *fmt, ...) __attribute__((noreturn));
 
 void         psdl_surface_init(void);
 SDL_Surface *psdl_surface_alloc_header(void);
+
+/* Wrap a framebuffer that lives in .bss and outlives everything - no pool slot, no
+ * arena, nothing to free. A backend uses it for buffers it owns itself. */
+SDL_Surface *psdl_surface_wrap_static(void *pixels, int w, int h, int pitch);
 void         psdl_surface_free_header(SDL_Surface *s);
 
 void         psdl_palette_init(void);

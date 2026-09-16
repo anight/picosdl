@@ -7,7 +7,7 @@
  * Each glyph is expanded into a small scratch surface, blitted, and released -
  * which also gives the LIFO arena something to do on every frame.
  */
-#include "font5x7.h"
+#include "psdl_font5x7.h"
 
 static const Uint8 font5x7_glyphs[95][5] = {
 	{0x00,0x00,0x00,0x00,0x00}, /* space */
@@ -107,39 +107,39 @@ static const Uint8 font5x7_glyphs[95][5] = {
 	{0x08,0x08,0x2A,0x1C,0x08}, /* ~ */
 };
 
-int font5x7_width(const char *text)
+int PSDL_Font5x7Width(const char *text)
 {
 	int n = 0;
 	while (text != NULL && *text++ != '\0')
 		++n;
-	return n > 0 ? n * FONT5X7_ADVANCE - 1 : 0;
+	return n > 0 ? n * PSDL_FONT5X7_ADVANCE - 1 : 0;
 }
 
-int font5x7_draw(SDL_Surface *dst, int x, int y, Uint8 color, const char *text)
+int PSDL_Font5x7Draw(SDL_Surface *dst, int x, int y, Uint8 color, const char *text)
 {
 	if (dst == NULL || text == NULL)
 		return x;
 
 	/* One scratch glyph, reused for the whole string: create/free per
 	 * character would push and pop the arena 40 times a line for no gain. */
-	SDL_Surface *glyph = SDL_CreateRGBSurface(0, FONT5X7_W, FONT5X7_H, 8, 0, 0, 0, 0);
+	SDL_Surface *glyph = SDL_CreateRGBSurface(0, PSDL_FONT5X7_WIDTH, PSDL_FONT5X7_HEIGHT, 8, 0, 0, 0, 0);
 	if (glyph == NULL)
 		return x;
 	SDL_SetColorKey(glyph, SDL_TRUE, 0);
 
-	for (const char *p = text; *p != '\0'; ++p, x += FONT5X7_ADVANCE) {
+	for (const char *p = text; *p != '\0'; ++p, x += PSDL_FONT5X7_ADVANCE) {
 		unsigned char c = (unsigned char)*p;
 		if (c < 0x20 || c > 0x7E)
 			continue;
 
 		const Uint8 *cols = font5x7_glyphs[c - 0x20];
-		for (int row = 0; row < FONT5X7_H; ++row) {
+		for (int row = 0; row < PSDL_FONT5X7_HEIGHT; ++row) {
 			Uint8 *dstrow = (Uint8 *)glyph->pixels + row * glyph->pitch;
-			for (int col = 0; col < FONT5X7_W; ++col)
+			for (int col = 0; col < PSDL_FONT5X7_WIDTH; ++col)
 				dstrow[col] = (cols[col] >> row) & 1 ? color : 0;
 		}
 
-		SDL_Rect at = { x, y, FONT5X7_W, FONT5X7_H };
+		SDL_Rect at = { x, y, PSDL_FONT5X7_WIDTH, PSDL_FONT5X7_HEIGHT };
 		SDL_BlitSurface(glyph, NULL, dst, &at);
 	}
 

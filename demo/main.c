@@ -48,7 +48,7 @@
 #include "SDL2/SDL.h"
 #include "psdl_pico.h"
 
-#include "font5x7.h"
+#include "psdl_font5x7.h"
 #include "tune.h"
 
 /*
@@ -517,39 +517,39 @@ int main(void)
 
 		char line[64];
 		int  ty = 12;
-		font5x7_draw(screen, 12, ty, PAL_YELLOW, "picosdl demo"); ty += 12;
+		PSDL_Font5x7Draw(screen, 12, ty, PAL_YELLOW, "picosdl demo"); ty += 12;
 
-		font5x7_draw(screen, 12, ty, PAL_CYAN, psdl_pico_input_status()); ty += 10;
+		PSDL_Font5x7Draw(screen, 12, ty, PAL_CYAN, psdl_pico_input_status()); ty += 10;
 
 		snprintf(line, sizeof(line), "key: %s", last_key);
-		font5x7_draw(screen, 12, ty, PAL_WHITE, line); ty += 10;
+		PSDL_Font5x7Draw(screen, 12, ty, PAL_WHITE, line); ty += 10;
 
 		snprintf(line, sizeof(line), "stick: x=%6d y=%6d %s",
 		         (int)ax, (int)ay, SDL_JoystickGetButton(joystick, 0) ? "[btn]" : "");
-		font5x7_draw(screen, 12, ty, PAL_WHITE, line); ty += 10;
+		PSDL_Font5x7Draw(screen, 12, ty, PAL_WHITE, line); ty += 10;
 
 		snprintf(line, sizeof(line), "fps: %u   dropped events: %u",
 		         (unsigned)fps, PSDL_DroppedEvents());
-		font5x7_draw(screen, 12, ty, PAL_GREEN, line); ty += 10;
+		PSDL_Font5x7Draw(screen, 12, ty, PAL_GREEN, line); ty += 10;
 
 		snprintf(line, sizeof(line), "music: %s%s",
 		         tune_playing() ? tune_name() : "(stopped)",
 		         s_test_tone_hz ? "  [TEST TONE]" : "");
-		font5x7_draw(screen, 12, ty, PAL_YELLOW, line); ty += 10;
+		PSDL_Font5x7Draw(screen, 12, ty, PAL_YELLOW, line); ty += 10;
 
 		snprintf(line, sizeof(line), "volume: %d%%",
 		         PSDL_GetMasterVolume() * 100 / PSDL_VOLUME_UNITY);
-		font5x7_draw(screen, 12, ty, PAL_CYAN, line); ty += 10;
+		PSDL_Font5x7Draw(screen, 12, ty, PAL_CYAN, line); ty += 10;
 
 		/* The number the OPL3 question turns on. Red once the mixer is using
 		 * more than three quarters of its budget. */
 		snprintf(line, sizeof(line), "mixer load: %u%% avg, %u%% peak",
 		         mix_avg, mix_peak);
-		font5x7_draw(screen, 12, ty, mix_peak > 75 ? PAL_RED : PAL_GREEN, line);
+		PSDL_Font5x7Draw(screen, 12, ty, mix_peak > 75 ? PAL_RED : PAL_GREEN, line);
 
-		font5x7_draw(screen, 12, screen->h - 22, PAL_GREY,
+		PSDL_Font5x7Draw(screen, 12, screen->h - 22, PAL_GREY,
 		             "stick moves - space xor - F fade");
-		font5x7_draw(screen, 12, screen->h - 12, PAL_GREY,
+		PSDL_Font5x7Draw(screen, 12, screen->h - 12, PAL_GREY,
 		             "1 music  0 stop  -/= vol  T tone  M mem  Esc quit");
 
 		SDL_UpdateWindowSurface(window);

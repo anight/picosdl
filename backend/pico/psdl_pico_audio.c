@@ -58,6 +58,10 @@ static int           s_open_rate;
  */
 static spin_lock_t *s_audio_lock;
 static uint32_t     s_audio_lock_state;
+/* Busy microseconds on core 1 since the last read. Written here only, read and
+ * cleared by the video backend for the status band. */
+volatile uint32_t psdl_pico_core1_busy_us;
+
 static volatile int s_audio_lock_owner = -1;
 static volatile int s_audio_lock_depth;
 
@@ -119,7 +123,15 @@ static void __not_in_flash_func(fill_block)(int32_t *out)
 		return;
 	}
 
+	/*
+	 * Core 1's load, measured where it is spent. Nothing else runs on this core, so
+	 * time inside the client's mixing callback over an interval *is* its load. The
+	 * video backend reads and clears this once a second for the status band.
+	 */
+	absolute_time_t mix_t0 = get_absolute_time();
 	psdl_audio_render(s_mix_buffer, PSDL_AUDIO_BLOCK_FRAMES);
+	psdl_pico_core1_busy_us +=
+		(uint32_t)absolute_time_diff_us(mix_t0, get_absolute_time());
 
 	int volume = s_volume;   /* read once; core 0 can change it mid-block */
 

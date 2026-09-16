@@ -623,6 +623,24 @@ SDL_RWops *SDL_RWFromFile(const char *file, const char *mode);
 /* Print surface-pool and arena occupancy, including peaks. This is how the
  * arena gets sized: run the real workload, read the high-water mark. */
 void     PSDL_ReportMemory(void);
+
+/*
+ * The letterbox status bands.
+ *
+ * When the panel is taller than the canvas, the strips above and below it are
+ * otherwise unused. PSDL_StatusBands turns them on, in palette indices `fg` and
+ * `bg` - indices, because only the client knows what its palette means.
+ *
+ * The header is picosdl's own: frame rate and the load on both cores, which are
+ * numbers only the library is in a position to measure. The footer is whatever
+ * PSDL_SetFooterText was given, centred. Both are repainted once a second, which is
+ * also what keeps them legible - a band's pixels are expanded through the CLUT when
+ * pushed, so they do not follow later palette changes the way the canvas does.
+ *
+ * No effect on a backend whose panel is exactly the canvas size.
+ */
+void     PSDL_StatusBands(SDL_bool on, Uint8 fg, Uint8 bg);
+void     PSDL_SetFooterText(const char *text);
 void     PSDL_DumpArena(void);
 /* Events lost to a full queue. Should stay at zero; anything else means the
  * consumer is not polling often enough. */

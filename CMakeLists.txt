@@ -111,6 +111,7 @@ add_library(picosdl STATIC
     src/psdl_rwops.c
     src/psdl_stubs.c
     src/psdl_gamecontroller.c
+    src/psdl_font5x7.c
 
     backend/pico/psdl_pico_video.c
     backend/pico/psdl_pico_input.c
@@ -218,6 +219,7 @@ set_source_files_properties(
     src/psdl_init.c src/psdl_surface.c src/psdl_blit.c src/psdl_palette.c
     src/psdl_video.c src/psdl_events.c src/psdl_timer.c src/psdl_audio.c
     src/psdl_rwops.c src/psdl_stubs.c src/psdl_gamecontroller.c
+    src/psdl_font5x7.c
     backend/pico/psdl_pico_video.c backend/pico/psdl_pico_audio.c
     backend/pico/psdl_pico_input.c backend/pico/psdl_pico_time.c
     backend/pico/psdl_pico_log.c
@@ -249,13 +251,13 @@ option(PICOSDL_BUILD_DEMO "Build picosdl-demo" ${PICOSDL_STANDALONE})
 
 if (PICOSDL_BUILD_DEMO)
     add_executable(picosdl-demo
-        demo/main.c demo/font5x7.c demo/tune.c
+        demo/main.c demo/tune.c
     )
     target_link_libraries(picosdl-demo PRIVATE picosdl)
     target_include_directories(picosdl-demo PRIVATE ${CMAKE_CURRENT_LIST_DIR}/demo)
 
     set_source_files_properties(
-        demo/main.c demo/font5x7.c demo/tune.c
+        demo/main.c demo/tune.c
         PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra")
 
     # Nothing in the demo allocates; the heap is here only for newlib's stdio
