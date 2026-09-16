@@ -24,7 +24,6 @@
 
 #if PSDL_HAVE_BT_KEYBOARD
 #include "btstack.h"
-#include "btstack_stdin.h"
 #include "pico/cyw43_arch.h"
 #include "bt_app.h"
 #include "bt/debug.h"
@@ -79,21 +78,35 @@ static Uint32 s_pad_poll_ms;
 /*
  * The serial console.
  *
- * Bluetooth-only, because the plumbing is BTstack's: btstack_stdin_setup() hooks
- * stdin onto its run loop, and without the stack there is nothing to hook onto.
- * A build without Bluetooth therefore has no console commands - including the
- * volume one, which is a real loss and would need its own stdin polling to fix.
+ * Typed into the serial terminal, not on the Bluetooth keyboard. It used to be
+ * wired through btstack_stdin_setup(), which hooks stdin onto BTstack's run loop -
+ * so a build without Bluetooth had no console at all, including the commands that
+ * have nothing to do with Bluetooth. On a board with a stick and a pad and no
+ * keyboard that left a volume which could be neither read nor changed, since the
+ * volume keys arrive over Bluetooth too.
+ *
+ * So stdin is polled here instead. getchar_timeout_us(0) returns immediately when
+ * there is nothing waiting, and this runs on core 0 outside any interrupt, which is
+ * the context stdio wants. Nothing about it needs BTstack, and dropping
+ * btstack_stdin_setup() removes a dependency rather than adding one.
+ *
+ * The Bluetooth commands are still compiled out with Bluetooth; the rest are always
+ * there.
  */
+static void console_help(void)
+{
+	printf("[console]"
 #if PSDL_HAVE_BT_KEYBOARD
-/*
- * Typed into the serial terminal, not on the Bluetooth keyboard. Bluetooth is
- * the one subsystem here that can fail in ways nothing on screen explains - a
- * link that drops, a stale pairing, a keyboard on the wrong channel - and
- * without this the only way to look is a debugger.
- */
+	       " s = bluetooth status, r = forget pairing and re-search,"
+	       " n = re-search, d = bluetooth log,"
+#endif
+	       " v = volume, +/- = louder/quieter, m = mute, h = this\n");
+}
+
 static void console_command(char cmd)
 {
 	switch (cmd) {
+#if PSDL_HAVE_BT_KEYBOARD
 	case 's':
 		bt_app_print_status();
 		break;
@@ -111,21 +124,77 @@ static void console_command(char cmd)
 		printf("[console] bluetooth logging %s\n",
 		       pico_test_bt_keyboard_verbose ? "on" : "off");
 		break;
+#endif
 	case 'v':
 		printf("[console] master volume %d/%d\n",
 		       PSDL_GetMasterVolume(), PSDL_VOLUME_UNITY);
 		break;
+
+	/*
+	 * Volume, by handing the audio layer the same scancodes the keyboard's media
+	 * keys produce. Reuse rather than a second implementation: the 3 dB ladder and
+	 * the mute memory then cannot drift between the two ways of reaching them, and
+	 * a board with no keyboard gets exactly the keyboard's behaviour.
+	 */
+	case '+':
+	case '=':
+		psdl_audio_volume_key(SDL_SCANCODE_VOLUMEUP, 1);
+		break;
+	case '-':
+	case '_':
+		psdl_audio_volume_key(SDL_SCANCODE_VOLUMEDOWN, 1);
+		break;
+	case 'm':
+		psdl_audio_volume_key(SDL_SCANCODE_MUTE, 1);
+		break;
+
 	case '?':
 	case 'h':
-		printf("[console] s = status, r = forget pairing and re-search, "
-		       "n = re-search, d = bluetooth log, v = volume\n");
+		console_help();
 		break;
 	default:
 		break;
 	}
 }
 
-#endif /* PSDL_HAVE_BT_KEYBOARD */
+/*
+ * Drain whatever has been typed, a few times a second.
+ *
+ * The rate limit is not politeness, it is necessary. This is reached from
+ * SDL_PumpEvents(), and SDL_PollEvent() calls that - so a client draining its queue
+ * pumps several times a frame and an ungated poll ran ~840 times a second. Each call
+ * is usually 13-30 us, which sounds free, but two things make it not:
+ *
+ *   * it is stdio, so with USB stdio enabled it can drive the TinyUSB device task.
+ *     Measured, one early call took 48.5 ms - and an audio block is 11.6 ms.
+ *   * 840 calls a second of stdio code is steady XIP traffic, and core 1 runs its
+ *     OPL synthesis out of flash. The audio *path* is __not_in_flash_func, but the
+ *     synthesis is not, so bus contention there eats into a block budget already
+ *     peaking above 50%.
+ *
+ * Five times a second is far quicker than anyone can type and cuts both effects by
+ * ~99%. The inner loop stays, so a pasted run of characters is still consumed at
+ * once rather than one per poll.
+ */
+#define PSDL_CONSOLE_POLL_INTERVAL_MS 200
+
+static void poll_console(void)
+{
+	static Uint32 last_ms;
+	Uint32 now = psdl_backend_ticks_ms();
+	if ((Uint32)(now - last_ms) < PSDL_CONSOLE_POLL_INTERVAL_MS)
+		return;
+	last_ms = now;
+
+	for (;;) {
+		int c = getchar_timeout_us(0);
+		if (c == PICO_ERROR_TIMEOUT)
+			return;
+		if (c == '\r' || c == '\n')
+			continue;         /* terminals send these; they are not commands */
+		console_command((char)c);
+	}
+}
 
 /* ------------------------------------------------------------- keyboard */
 
@@ -281,7 +350,6 @@ void psdl_backend_input_init(void)
 		       "         carrying on without a keyboard\n");
 	} else {
 		bt_app_setup();
-		btstack_stdin_setup(&console_command);
 
 		/* bt_app_setup wired its own handler, which prints to the console. Take
 		 * over the key events - the same decoder now feeds the SDL event queue
@@ -318,6 +386,7 @@ void psdl_backend_input_init(void)
 	       " no input devices built in, so nothing can be pressed"
 #endif
 	       "\n");
+	console_help();
 }
 
 
@@ -392,6 +461,10 @@ void psdl_backend_input_poll(void)
 
 	if (!s_ready)
 		return;
+
+	/* Typed commands, whatever this build has. Core 0, outside any interrupt. */
+	poll_console();
+
 #if PSDL_HAVE_JOYSTICK
 	poll_joystick();
 #endif

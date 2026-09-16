@@ -103,6 +103,27 @@ zero, so a stick at rest would otherwise overwrite a deflected one milliseconds
 later. A client that finds a controller stops listening to the joystick, so without
 this the board's stick would go dead the moment a pad was plugged in.
 
+### The serial console
+
+Single keypresses in the serial terminal, no Enter. `h` lists what the build has:
+
+```
+v = volume, +/- = louder/quieter, m = mute, h = this
+s = bluetooth status, r = forget pairing and re-search, n = re-search, d = bluetooth log
+```
+
+The second line only with Bluetooth. Stdin is polled from the input poll with
+`getchar_timeout_us(0)` — core 0, outside any interrupt, which is the context stdio
+wants — rather than through `btstack_stdin_setup()`. That matters because the
+BTstack route meant a build without Bluetooth had no console at all, including the
+commands that have nothing to do with it: a board with a stick and a pad and no
+keyboard had a volume it could neither read nor change, since the volume keys arrive
+over Bluetooth too.
+
+`+`, `-` and `m` hand the audio layer the same scancodes the keyboard's media keys
+produce, so the 3 dB ladder and the mute memory cannot drift between the two ways of
+reaching them.
+
 ### The volume keys do not reach the game
 
 Volume up, volume down and mute are handled by the library and consumed: no
@@ -268,10 +289,10 @@ Roughly, against everything on:
 If you are short of space there is only one of these worth switching off. The other
 three are about having the hardware, not about size.
 
-Two consequences worth knowing. The serial console (`s`, `r`, `n`, `d`, `v`) is
-BTstack's stdin plumbing, so it goes away with Bluetooth — including the volume
-command, which is a real loss. And `psdl_pico_input_status()` reports
-`NO KEYBOARD IN THIS BUILD` rather than a link state.
+One consequence worth knowing: `psdl_pico_input_status()` reports
+`NO KEYBOARD IN THIS BUILD` rather than a link state. The serial console survives —
+stdin is polled directly rather than through BTstack, so only the four
+Bluetooth-specific commands go with it.
 
 ### The demo
 
