@@ -415,11 +415,7 @@ void bt_app_setup(void) {
     att_server_init(profile_data, NULL, NULL);
     sdp_init();
 
-    /* What this board calls itself over the air. It was "pico-test-bt-keyboard",
-     * from the standalone project this code came out of - a name that announced the
-     * thing as test scaffolding to every device in range long after it stopped
-     * being any such thing. */
-    gap_set_local_name("pico-bt-keyboard");
+    gap_set_local_name("picosdl-bt");
 
     kbd_decode_init(&on_key_event, &bt_app_set_keyboard_leds);
 
