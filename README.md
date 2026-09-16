@@ -196,6 +196,51 @@ The ST7789 driver is a submodule, so:
 git submodule update --init
 ```
 
+### Choosing which inputs to build
+
+Three CMake options, independent, all defaulting on, and **none required**:
+
+```bash
+cmake -S . -B build \
+  -DPICOSDL_INPUT_BT_KEYBOARD=OFF \
+  -DPICOSDL_INPUT_JOYSTICK=ON \
+  -DPICOSDL_INPUT_GAMEPAD=OFF
+```
+
+Off means absent, not ignored: the driver is not compiled. A build with all three
+off is legitimate and produces a library with a display and a speaker and no way to
+press anything — which is what a kiosk or a permanent attract-mode demo wants.
+Nothing tries to talk you out of it, and `SDL_NumJoysticks()` then reports 0 so a
+client can discover there is nothing to read rather than waiting on input that will
+never arrive.
+
+Bluetooth is the one worth turning off if you do not need it. It brings in BTstack
+twice over — the BLE and Classic stacks, because a keyboard may be either and you
+cannot tell from the outside — plus the CYW43 driver and that chip's firmware blob.
+The blob alone is 234 KB of flash and is not code, so nothing else can shrink it.
+
+*Measured* on one client's firmware, all eight combinations built clean:
+
+| BT | joystick | gamepad | `.text` | `.bss` |
+|---|---|---|---|---|
+| on | on | on | 1,939,880 | 357,020 |
+| on | on | off | 1,937,248 | 357,012 |
+| on | off | on | 1,938,112 | 356,988 |
+| on | off | off | 1,935,168 | 356,948 |
+| **off** | on | on | **1,508,640** | **334,840** |
+| off | on | off | 1,506,008 | 334,832 |
+| off | off | on | 1,506,864 | 334,804 |
+| off | off | off | 1,503,944 | 334,768 |
+
+So Bluetooth is **431 KB of flash and 22 KB of RAM**, and the other two are about
+2.6 KB and 1.8 KB. If you are short of space, there is only one of these worth
+switching off.
+
+Two consequences worth knowing. The serial console (`s`, `r`, `n`, `d`, `v`) is
+BTstack's stdin plumbing, so it goes away with Bluetooth — including the volume
+command, which is a real loss. And `psdl_pico_input_status()` reports
+`NO KEYBOARD IN THIS BUILD` rather than a link state.
+
 ### The demo
 
 A standalone build produces `picosdl-demo`, which is the thing to run first on a

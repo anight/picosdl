@@ -62,6 +62,8 @@ void psdl_controller_set_present(int present)
 	psdl_push_controller_device(present);
 }
 
+int psdl_controller_present(void) { return s_present; }
+
 void psdl_controller_set_axis(int axis, Sint16 value)
 {
 	if (axis < 0 || axis >= SDL_CONTROLLER_AXIS_MAX)

@@ -66,6 +66,23 @@ endif()
 
 # ----------------------------------------------------------------- picosdl
 
+# ------------------------------------------------------------------ the inputs
+#
+# Three independent input devices, each optional, and none of them required. A
+# build with all three off is legitimate: it produces a library with a display and
+# a speaker and no way to press anything, which is exactly what a kiosk or an
+# attract-mode demo wants. Nothing here tries to talk you out of it.
+#
+# Off means *absent*, not ignored: the driver is not compiled, and in the Bluetooth
+# case neither is BTstack nor the CYW43 firmware blob it carries.
+#
+option(PICOSDL_INPUT_BT_KEYBOARD "Bluetooth HID keyboard" ON)
+option(PICOSDL_INPUT_JOYSTICK    "Analog joystick on the ADC" ON)
+option(PICOSDL_INPUT_GAMEPAD     "I2C game controller (Adafruit Gamepad QT)" ON)
+
+message(STATUS "picosdl inputs: BT keyboard=${PICOSDL_INPUT_BT_KEYBOARD} "
+               "joystick=${PICOSDL_INPUT_JOYSTICK} gamepad=${PICOSDL_INPUT_GAMEPAD}")
+
 add_library(picosdl STATIC
     src/psdl_init.c
     src/psdl_surface.c
@@ -85,53 +102,92 @@ add_library(picosdl STATIC
     backend/pico/psdl_pico_time.c
     backend/pico/psdl_pico_log.c
     backend/pico/pio-i2s.c
-    backend/pico/joystick.c
-    backend/pico/seesaw_gamepad.c
 
     ${LCD_DRIVER_DIR}/dispPioSt7789.c
-
-    ${BT_KEYBOARD_DIR}/bt_app.c
-    ${BT_KEYBOARD_DIR}/bt_le.c
-    ${BT_KEYBOARD_DIR}/bt_classic.c
-    ${BT_KEYBOARD_DIR}/hid_report.c
-    ${BT_KEYBOARD_DIR}/kbd_decode.c
-    ${BT_KEYBOARD_DIR}/debug.c
 )
+
+if (PICOSDL_INPUT_JOYSTICK)
+    target_sources(picosdl PRIVATE backend/pico/joystick.c)
+    target_compile_definitions(picosdl PUBLIC PSDL_HAVE_JOYSTICK=1)
+endif()
+
+if (PICOSDL_INPUT_GAMEPAD)
+    target_sources(picosdl PRIVATE backend/pico/seesaw_gamepad.c)
+    target_compile_definitions(picosdl PUBLIC PSDL_HAVE_GAMEPAD=1)
+endif()
+
+if (PICOSDL_INPUT_BT_KEYBOARD)
+    target_sources(picosdl PRIVATE
+        ${BT_KEYBOARD_DIR}/bt_app.c
+        ${BT_KEYBOARD_DIR}/bt_le.c
+        ${BT_KEYBOARD_DIR}/bt_classic.c
+        ${BT_KEYBOARD_DIR}/hid_report.c
+        ${BT_KEYBOARD_DIR}/kbd_decode.c
+        ${BT_KEYBOARD_DIR}/debug.c
+    )
+    target_compile_definitions(picosdl PUBLIC PSDL_HAVE_BT_KEYBOARD=1)
+endif()
 
 target_include_directories(picosdl PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/include
     ${CMAKE_CURRENT_LIST_DIR}/backend/pico
+)
+if (PICOSDL_INPUT_BT_KEYBOARD)
     # btstack_config.h lives here, and it has to be PUBLIC: the pico_btstack_*
     # libraries are INTERFACE targets, so BTstack's own sources are compiled
     # into whatever executable links this - and every one of them includes it.
-    ${BT_KEYBOARD_DIR}
-)
+    target_include_directories(picosdl PUBLIC ${BT_KEYBOARD_DIR})
+endif()
 target_include_directories(picosdl PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
     ${LCD_DRIVER_DIR}
 )
 
 pico_generate_pio_header(picosdl ${CMAKE_CURRENT_LIST_DIR}/backend/pico/pio-i2s-out.pio)
-pico_btstack_make_gatt_header(picosdl PRIVATE ${BT_KEYBOARD_DIR}/kbd_host.gatt)
+if (PICOSDL_INPUT_BT_KEYBOARD)
+    pico_btstack_make_gatt_header(picosdl PRIVATE ${BT_KEYBOARD_DIR}/kbd_host.gatt)
+endif()
 
 target_link_libraries(picosdl PUBLIC
     pico_stdlib
     pico_rand
     pico_multicore
-    hardware_adc
     hardware_dma
-    hardware_i2c
     hardware_pio
-    pico_btstack_ble
-    pico_btstack_classic
-    pico_btstack_cyw43
-    pico_cyw43_arch_threadsafe_background
 )
 
 target_compile_definitions(picosdl PUBLIC
-    CYW43_LWIP=0                                  # Bluetooth only, no networking
     PICO_STDIO_USB_CONNECT_WAIT_TIMEOUT_MS=3000
 )
+
+if (PICOSDL_INPUT_JOYSTICK)
+    target_link_libraries(picosdl PUBLIC hardware_adc)
+endif()
+
+if (PICOSDL_INPUT_GAMEPAD)
+    target_link_libraries(picosdl PUBLIC hardware_i2c)
+endif()
+
+#
+# Bluetooth is the expensive one, which is why turning it off is worth doing.
+#
+# It brings in BTstack twice over - the BLE and Classic stacks, because a keyboard
+# may be either and you cannot tell from the outside - plus the CYW43 driver and,
+# with it, that chip's firmware blob. The blob alone is 234 KB of flash and is not
+# code, so nothing can shrink it.
+#
+# CYW43_LWIP=0 belongs here rather than above: it says "radio, but no networking",
+# and without the radio there is nothing for it to say.
+#
+if (PICOSDL_INPUT_BT_KEYBOARD)
+    target_link_libraries(picosdl PUBLIC
+        pico_btstack_ble
+        pico_btstack_classic
+        pico_btstack_cyw43
+        pico_cyw43_arch_threadsafe_background
+    )
+    target_compile_definitions(picosdl PUBLIC CYW43_LWIP=0)
+endif()
 
 # Strict warnings for our own code only - the vendored drivers and the SDK are
 # not warning-clean and compile into the same target.
@@ -139,10 +195,12 @@ set_source_files_properties(
     src/psdl_init.c src/psdl_surface.c src/psdl_blit.c src/psdl_palette.c
     src/psdl_video.c src/psdl_events.c src/psdl_timer.c src/psdl_audio.c
     src/psdl_rwops.c src/psdl_stubs.c src/psdl_gamecontroller.c
-    backend/pico/seesaw_gamepad.c
     backend/pico/psdl_pico_video.c backend/pico/psdl_pico_audio.c
     backend/pico/psdl_pico_input.c backend/pico/psdl_pico_time.c
     backend/pico/psdl_pico_log.c
+    # Listed whether or not the options above included them: a property on a file
+    # that is not in the target is ignored, which is simpler than two lists.
+    backend/pico/joystick.c backend/pico/seesaw_gamepad.c
     PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra"
 )
 

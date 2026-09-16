@@ -123,10 +123,17 @@ void psdl_push_joy_button(int button, int pressed);
 void psdl_push_quit(void);
 void psdl_joystick_set_axis(int axis, Sint16 value);
 
+/* Whether this build has an analog joystick at all. Together with the controller's
+ * presence it is what SDL_NumJoysticks() reports, which is how a client discovers
+ * there is nothing to read. */
+void psdl_joystick_set_present(int present);
+int  psdl_joystick_present(void);
+
 /* Game controller state, fed by whichever backend has one. Presence drives
  * SDL_IsGameController(); the axis and button setters only emit an event when the
  * value actually changes, so a backend may call them every poll. */
 void psdl_controller_set_present(int present);
+int  psdl_controller_present(void);
 void psdl_controller_set_axis(int axis, Sint16 value);
 void psdl_controller_set_button(int button, int pressed);
 void psdl_joystick_set_button(int button, int pressed);

@@ -119,6 +119,22 @@ SDL2 links unmodified. There is nothing on this hardware to shake, and
 `SDL_GameControllerRumble()` returns -1 for the same reason - which is what SDL
 itself returns when a device cannot do it.
 
+## No serial console without Bluetooth
+
+The console commands - `s` status, `r` re-pair, `n` re-search, `d` logging, `v`
+volume - are wired through `btstack_stdin_setup()`, which hooks stdin onto BTstack's
+run loop. Build with `PICOSDL_INPUT_BT_KEYBOARD=OFF` and they all go, including the
+two that have nothing to do with Bluetooth.
+
+`v` is the one that stings: it is the only way to read the master volume back, and
+on a build with no keyboard there is also no way to change it, since the volume keys
+arrive over Bluetooth. A board with a joystick and a pad and no keyboard therefore
+has a volume it cannot see or alter.
+
+Fixing it means polling stdin without BTstack - `getchar_timeout_us(0)` from the
+input poll would do, since that already runs on core 0 every frame - and moving the
+Bluetooth-specific commands behind the same option the rest of them are behind.
+
 ## One backend, one board
 
 `backend/pico` assumes this hardware: an ST7789 panel on PIO0, I2S on PIO1, a

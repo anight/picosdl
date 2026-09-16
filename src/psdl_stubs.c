@@ -30,9 +30,31 @@ void psdl_joystick_set_button(int button, int pressed)
 		s_buttons[button] = pressed ? 1 : 0;
 }
 
+static int s_joystick_present;
+
+void psdl_joystick_set_present(int present) { s_joystick_present = present ? 1 : 0; }
+int  psdl_joystick_present(void)            { return s_joystick_present; }
+
+/*
+ * How many joysticks there are, which on this target means "is there anything to
+ * read at all".
+ *
+ * It used to return 1 unconditionally, which was true enough when the analog stick
+ * was always compiled in. Now each input device is optional and a build may have
+ * none, so a client has to be able to discover that: SDLPoP checks
+ * SDL_NumJoysticks() first and stays in keyboard mode when it is zero - and with no
+ * keyboard either, it simply runs its attract mode for ever, which is the intended
+ * outcome of a build with no inputs rather than a failure.
+ *
+ * One rather than two when both a stick and a pad are present. SDL proper would
+ * count them separately, but here they are deliberately the same device: both feed
+ * one controller's left stick, because a client that finds a controller stops
+ * reading joysticks. Reporting two would invite a client to open the second and
+ * find it inert.
+ */
 int SDL_NumJoysticks(void)
 {
-	return 1;
+	return (s_joystick_present || psdl_controller_present()) ? 1 : 0;
 }
 
 SDL_Joystick *SDL_JoystickOpen(int device_index)

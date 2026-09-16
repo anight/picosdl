@@ -181,7 +181,9 @@
  * poll against a ~21 ms frame. 1 MHz works too but is outside Fast-mode spec for a
  * Stemma QT cable's pull-ups and saves only 0.24 ms.
  */
-#define PSDL_BOARD_GAMEPAD_ENABLE      1
+/* Whether the driver is built at all is a build choice, not a property of the
+ * board: see PICOSDL_INPUT_GAMEPAD in CMakeLists.txt. What is a property of the
+ * board is which pins it is on, which is what follows. */
 #define PSDL_BOARD_GAMEPAD_I2C         i2c1   /* GP6/GP7 are I2C1, not I2C0 */
 #define PSDL_BOARD_GAMEPAD_SDA_PIN     6
 #define PSDL_BOARD_GAMEPAD_SCL_PIN     7
