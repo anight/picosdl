@@ -490,6 +490,15 @@ bool psdl_pico_keyboard_connected(void)
 #endif
 }
 
+int psdl_pico_bt_connected(void)
+{
+#if PSDL_HAVE_BT_KEYBOARD
+	return bt_app_keyboard_connected() ? 1 : 0;
+#else
+	return 0;
+#endif
+}
+
 const char *psdl_pico_input_status(void)
 {
 	static char buf[48];

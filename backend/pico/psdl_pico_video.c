@@ -19,8 +19,9 @@
 #include "dispPioSt7789.h"
 #include "pinout.h"
 
-#include "psdl_font5x7.h"
+#include "psdl_font.h"
 #include "psdl_internal.h"
+#include "psdl_pico.h"
 #include "psdl_pico.h"
 
 static struct dmaTransfer *s_xfer;
@@ -52,6 +53,16 @@ static int s_ready;
  */
 #define BAND_H 20
 
+/*
+ * 9x14 rather than 5x7. The bands are 20 rows of a physical panel, and 7-pixel
+ * glyphs are legible there but small; 14 leaves three rows of margin top and
+ * bottom. Width is what bounds the choice, not height: the widest header this
+ * prints is "100 FPS   CORE0 100%   CORE1 100%", 33 characters, which at 9 px
+ * each is 297 of the 320 available. The next size up in the family, 10x20, needs
+ * 330 and would clip.
+ */
+#define BAND_FONT (&PSDL_Font9x14)
+
 /* One band's worth of pixels, reused for both. Static rather than from the arena:
  * 6.4 KB pinned at the bottom of a 28 KB LIFO arena for the life of the process is
  * exactly the mistake that exhausted it once already. */
@@ -78,11 +89,34 @@ static int   s_bands_on;
  * each band push waits for its own. Which two indices they are does not matter,
  * since they are put back.
  */
-#define BAND_IDX_BG 0
-#define BAND_IDX_FG 1
+#define BAND_IDX_BG   0
+#define BAND_IDX_FG   1
+#define BAND_IDX_ICON 2
 
 static SDL_Color s_band_fg = { 255, 255, 255, SDL_ALPHA_OPAQUE };
 static SDL_Color s_band_bg = {   0,   0,   0, SDL_ALPHA_OPAQUE };
+
+#if PSDL_HAVE_BT_KEYBOARD
+/*
+ * The Bluetooth rune, in the top right corner: blue when a keyboard is connected,
+ * grey when not. Same 9x14 cell and the same column-major layout as the font, so
+ * it is drawn by the same loop.
+ *
+ * It is the one thing on the panel that says whether the radio found anything.
+ * Without it the only way to know is the serial console, which is exactly the
+ * situation this replaces.
+ */
+#define BAND_ICON_W 9
+#define BAND_ICON_H 14
+/* Inset from the right edge. The glyph cell has no side bearing of its own, so
+ * without this the rune touches the last column of the panel. */
+#define BAND_ICON_MARGIN 4
+static const Uint16 band_icon_bt[BAND_ICON_W] = {
+	0x0000, 0x0208, 0x0110, 0x00A0, 0x1FFF, 0x08A2, 0x0514, 0x0208, 0x0000,
+};
+static const SDL_Color s_icon_on  = {  32, 140, 255, SDL_ALPHA_OPAQUE };
+static const SDL_Color s_icon_off = {  90,  90,  90, SDL_ALPHA_OPAQUE };
+#endif
 static char  s_footer[48];
 
 /* Figures for the header. Frames are counted here; the two idle counters are
@@ -124,6 +158,10 @@ static void band_clut_override(void)
 {
 	clut_write(BAND_IDX_BG, s_band_bg);
 	clut_write(BAND_IDX_FG, s_band_fg);
+#if PSDL_HAVE_BT_KEYBOARD
+	clut_write(BAND_IDX_ICON,
+	           psdl_pico_bt_connected() ? s_icon_on : s_icon_off);
+#endif
 }
 
 /* And give them back, from the palette rather than from the hardware: picosdl's
@@ -133,21 +171,63 @@ static void band_clut_restore(void)
 	const SDL_Color *pal = PSDL_GlobalPalette()->colors;
 	clut_write(BAND_IDX_BG, pal[BAND_IDX_BG]);
 	clut_write(BAND_IDX_FG, pal[BAND_IDX_FG]);
+#if PSDL_HAVE_BT_KEYBOARD
+	clut_write(BAND_IDX_ICON, pal[BAND_IDX_ICON]);
+#endif
 }
 
 /* Render one band into the shared buffer and push it, waiting for it to land. */
-static void band_push(int y, const char *text)
+#if PSDL_HAVE_BT_KEYBOARD
+/*
+ * Straight into the band buffer rather than through the blitter. The font goes
+ * the long way round on purpose - it exercises the sprite path - but this is one
+ * 9x14 bitmap in a buffer we own, and a scratch surface for it would be
+ * ceremony.
+ */
+static void band_draw_icon(int x, int y)
+{
+	for (int col = 0; col < BAND_ICON_W; ++col) {
+		for (int row = 0; row < BAND_ICON_H; ++row) {
+			if (!((band_icon_bt[col] >> row) & 1))
+				continue;
+			int px = x + col, py = y + row;
+			if (px < 0 || px >= PSDL_PICO_PANEL_W || py < 0 || py >= BAND_H)
+				continue;
+			s_band_pixels[py * PSDL_PICO_PANEL_W + px] = BAND_IDX_ICON;
+		}
+	}
+}
+#endif
+
+/*
+ * `align_left` because the two bands want different things. The header's fields are
+ * padded to three columns, so the line is exactly as wide whatever the figures
+ * say; anchoring it to the left edge then pins every digit to one position, and
+ * nothing on the line ever moves. Centring it would have shifted the lot sideways
+ * for no reason. The footer is a fixed string and centring is what suits it.
+ */
+static void band_push(int y, const char *text, int align_left, int with_icon)
 {
 	if (s_band == NULL)
 		return;
 
 	memset(s_band_pixels, BAND_IDX_BG, sizeof(s_band_pixels));
 
-	int w = PSDL_Font5x7Width(text);
-	int x = (PSDL_PICO_PANEL_W - w) / 2;
+	int text_y = (BAND_H - BAND_FONT->height) / 2;
+	int w = PSDL_FontWidth(BAND_FONT, text);
+	int x = align_left ? 0 : (PSDL_PICO_PANEL_W - w) / 2;
 	if (x < 0)
 		x = 0;
-	PSDL_Font5x7Draw(s_band, x, (BAND_H - PSDL_FONT5X7_HEIGHT) / 2, BAND_IDX_FG, text);
+	PSDL_FontDraw(BAND_FONT, s_band, x, text_y, BAND_IDX_FG, text);
+
+#if PSDL_HAVE_BT_KEYBOARD
+	/* Right-hand end of the band, on the text's own line. */
+	if (with_icon)
+		band_draw_icon(PSDL_PICO_PANEL_W - BAND_ICON_W - BAND_ICON_MARGIN,
+		               text_y);
+#else
+	(void)with_icon;
+#endif
 
 	struct Rect r = { 0, (int16_t)y, PSDL_PICO_PANEL_W, BAND_H };
 	struct dmaTransfer *t = dispDrawBuffer(s_band_pixels,
@@ -201,14 +281,14 @@ static void bands_tick(void)
 	if (c1 > 100) c1 = 100;
 	psdl_pico_core1_busy_us = 0;
 
-	snprintf(s_header, sizeof(s_header), "%u FPS   CORE0 %u%%   CORE1 %u%%", fps, c0, c1);
+	snprintf(s_header, sizeof(s_header), "fps:%3u c0:%3u%% c1:%3u%%", fps, c0, c1);
 #else
-	snprintf(s_header, sizeof(s_header), "%u FPS   CORE0 %u%%", fps, c0);
+	snprintf(s_header, sizeof(s_header), "fps:%3u c0:%3u%%", fps, c0);
 #endif
 
 	band_clut_override();
-	band_push(0, s_header);
-	band_push(PSDL_PICO_PANEL_H - BAND_H, s_footer);
+	band_push(0, s_header, 1, 1);
+	band_push(PSDL_PICO_PANEL_H - BAND_H, s_footer, 0, 0);
 	band_clut_restore();
 }
 

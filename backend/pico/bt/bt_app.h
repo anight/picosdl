@@ -76,4 +76,9 @@ void bt_app_forget_pairing(void);
 void bt_app_search_again(void);
 void bt_app_print_status(void);
 
+// Is a keyboard connected right now? Distinct from "a keyboard has been seen":
+// this is the link state, so it goes false the moment the link drops rather than
+// waiting for the next keypress that does not arrive.
+bool bt_app_keyboard_connected(void);
+
 #endif // PICO_BT_KEYBOARD_BT_APP_H

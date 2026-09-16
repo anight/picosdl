@@ -370,6 +370,10 @@ void bt_app_link_down(bt_link_kind_t kind, const char *reason) {
     retry_later(1000);
 }
 
+bool bt_app_keyboard_connected(void) {
+    return app_state == APP_CONNECTED;
+}
+
 void bt_app_print_status(void) {
     psdl_log("\n[app] state: ");
     switch (app_state) {

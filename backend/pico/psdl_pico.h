@@ -56,4 +56,10 @@ bool psdl_pico_keyboard_connected(void);
 /* Human-readable one-liner about the input state, for status displays. */
 const char *psdl_pico_input_status(void);
 
+/*
+ * Is a Bluetooth keyboard connected? 0 in a build with no Bluetooth, so callers
+ * need no guard of their own. The status band's radio icon is the one caller.
+ */
+int psdl_pico_bt_connected(void);
+
 #endif /* PICOSDL_PICO_H */
