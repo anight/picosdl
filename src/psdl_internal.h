@@ -177,6 +177,21 @@ void psdl_backend_log(const char *fmt, ...) __attribute__((format(printf, 1, 2))
 
 void psdl_backend_video_init(int w, int h);
 void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch);
+
+/*
+ * Push one rectangle of the canvas.
+ *
+ * `pixels` points at the canvas origin and `pitch` is its stride; (x, y, w, h) is
+ * the region within it to send. The full-frame present above is this with the
+ * whole canvas as the rectangle.
+ *
+ * Two callers want it. A client that knows what changed can push only that - the
+ * panel keeps everything it was last sent, so anything not pushed stays as it is.
+ * And with PSDL_SCREEN_BUFFERS at 1 that retention is the second buffer: the
+ * screen the player is looking at lives in the panel, not in RAM.
+ */
+void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
+                                     int x, int y, int w, int h);
 void psdl_backend_video_sync(void);
 void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors);
 

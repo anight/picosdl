@@ -75,6 +75,41 @@ int SDL_UpdateWindowSurface(SDL_Window *window)
 	return 0;
 }
 
+/*
+ * Push only the rectangles that changed.
+ *
+ * Worth it because the panel link, not the CPU, is what a frame waits for: a full
+ * 320x200 push is 17.4 ms at 125 MHz, and a narrow strip is a fraction of that.
+ * The panel retains whatever it was last sent, so the parts left out keep showing
+ * the previous frame - which is the property a wipe transition and a
+ * single-buffered client both rely on.
+ *
+ * Rectangles are clipped to the surface; an empty or fully-clipped one is skipped
+ * rather than refused. Passing NULL is the full frame, as SDL does.
+ */
+int SDL_UpdateWindowSurfaceRects(SDL_Window *window, const SDL_Rect *rects, int numrects)
+{
+	if (window == NULL || window->surface == NULL)
+		return -1;
+
+	SDL_Surface *s = window->surface;
+	if (rects == NULL || numrects <= 0)
+		return SDL_UpdateWindowSurface(window);
+
+	for (int i = 0; i < numrects; ++i) {
+		int x = rects[i].x, y = rects[i].y;
+		int w = rects[i].w, h = rects[i].h;
+		if (x < 0) { w += x; x = 0; }
+		if (y < 0) { h += y; y = 0; }
+		if (x + w > s->w) w = s->w - x;
+		if (y + h > s->h) h = s->h - y;
+		if (w <= 0 || h <= 0)
+			continue;
+		psdl_backend_video_present_rect((const Uint8 *)s->pixels, s->pitch, x, y, w, h);
+	}
+	return 0;
+}
+
 void SDL_GetWindowSize(SDL_Window *window, int *w, int *h)
 {
 	if (w) *w = window ? window->w : PSDL_SCREEN_W;

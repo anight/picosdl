@@ -111,6 +111,15 @@ option(PICOSDL_INPUT_GAMEPAD     "I2C game controller (Adafruit Gamepad QT)" ON)
 #
 option(PICOSDL_AUDIO "I2S audio output (MAX98357A)" ON)
 
+# Full-screen buffers in the pool. 2 is the comfortable answer and the default;
+# 1 saves 62.5 KB and hands the job of holding the visible frame to the panel's
+# own memory, which costs the overlap between drawing and pushing - present has
+# to block until the push finishes, because the client is about to draw into the
+# buffer the DMA is reading. A client that wants 1 has to be written for it.
+set(PICOSDL_SCREEN_BUFFERS 2 CACHE STRING "Full-screen buffers in the pool (1 or 2)")
+set_property(CACHE PICOSDL_SCREEN_BUFFERS PROPERTY STRINGS 1 2)
+message(STATUS "picosdl screen buffers: ${PICOSDL_SCREEN_BUFFERS}")
+
 message(STATUS "picosdl inputs: BT keyboard=${PICOSDL_INPUT_BT_KEYBOARD} "
                "joystick=${PICOSDL_INPUT_JOYSTICK} gamepad=${PICOSDL_INPUT_GAMEPAD}")
 message(STATUS "picosdl audio: ${PICOSDL_AUDIO}")
@@ -146,7 +155,11 @@ if (PICOSDL_AUDIO)
     # pico_generate_pio_header call. Its example and tests build only when it is
     # the top-level project, which it is not here.
     add_subdirectory(pio-i2s EXCLUDE_FROM_ALL)
-    target_link_libraries(picosdl PUBLIC pio-i2s-lib)
+    # PUBLIC: the client's own code tests it too - a single-buffered client has to
+# know not to expect an offscreen surface of its own.
+target_compile_definitions(picosdl PUBLIC PSDL_SCREEN_BUFFERS=${PICOSDL_SCREEN_BUFFERS})
+
+target_link_libraries(picosdl PUBLIC pio-i2s-lib)
     target_compile_definitions(picosdl PUBLIC PSDL_HAVE_AUDIO=1)
 endif()
 

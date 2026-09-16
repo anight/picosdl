@@ -365,27 +365,55 @@ void psdl_backend_video_init(int w, int h)
 	s_ready = 1;
 }
 
+/*
+ * Wait for the panel, counting the time as core 0 idle.
+ *
+ * It is core 0's largest single idle and therefore the whole basis of the load
+ * figure on the status band, so it is measured here rather than left to
+ * dispDrawBuffer's implicit wait.
+ */
+static void wait_for_panel(void)
+{
+	if (s_xfer == NULL)
+		return;
+	absolute_time_t t0 = get_absolute_time();
+	dispDmaTransferWaitFinish(s_xfer);
+	psdl_pico_core0_idle_us += (uint32_t)absolute_time_diff_us(t0, get_absolute_time());
+	s_xfer = NULL;
+}
+
+void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
+                                     int x, int y, int w, int h)
+{
+	if (!s_ready)
+		return;
+
+	wait_for_panel();
+
+	struct Rect r = { (int16_t)x, (int16_t)(y + s_offset_y), (uint16_t)w, (uint16_t)h };
+	s_xfer = dispDrawBuffer((void *)(uintptr_t)(pixels + (size_t)y * pitch + x),
+	                        (uint32_t)(w * h), &r, (uint16_t)pitch);
+
+#if PSDL_SCREEN_BUFFERS == 1
+	/*
+	 * One buffer means the caller is about to draw into the memory the DMA is
+	 * reading, so the push has to finish before this returns. That serialises
+	 * drawing behind the panel instead of overlapping it - about 1.8 ms onto a
+	 * 17.4 ms frame on the client measured so far, which is what the second
+	 * buffer was really buying.
+	 */
+	wait_for_panel();
+#endif
+}
+
 void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 {
 	if (!s_ready)
 		return;
 
-	/* dispDrawBuffer waits for any transfer still in flight before starting,
-	 * so the previous frame is implicitly synced here. The framebuffer is not
-	 * written by the DMA, only read, hence the cast. */
-	/*
-	 * Wait for the previous frame here rather than letting dispDrawBuffer do it
-	 * implicitly, so the blocked time can be measured - it is core 0's only idle,
-	 * and therefore the whole basis of the load figure.
-	 */
-	if (s_xfer != NULL) {
-		absolute_time_t t0 = get_absolute_time();
-		dispDmaTransferWaitFinish(s_xfer);
-		psdl_pico_core0_idle_us +=
-			(uint32_t)absolute_time_diff_us(t0, get_absolute_time());
-		s_xfer = NULL;
-	}
+	wait_for_panel();
 	++s_frames;
+
 
 	/* Bands before the canvas: they block, and doing them first leaves the canvas
 	 * transfer as the one still in flight, which is what overlaps with drawing. */
@@ -395,6 +423,10 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 	struct Rect r = { 0, (int16_t)s_offset_y, (uint16_t)w, (uint16_t)h };
 	s_xfer = dispDrawBuffer((void *)(uintptr_t)pixels, (uint32_t)(w * h), &r,
 	                        (uint16_t)pitch);
+
+#if PSDL_SCREEN_BUFFERS == 1
+	wait_for_panel();   /* see psdl_backend_video_present_rect */
+#endif
 }
 
 void psdl_backend_video_sync(void)

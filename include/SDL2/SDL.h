@@ -261,6 +261,10 @@ SDL_Window  *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uin
 void         SDL_DestroyWindow(SDL_Window *window);
 SDL_Surface *SDL_GetWindowSurface(SDL_Window *window);
 int          SDL_UpdateWindowSurface(SDL_Window *window);
+/* Push only these rectangles. The panel keeps what it was last sent, so whatever
+ * is left out still shows the previous frame. NULL/0 means the whole surface. */
+int          SDL_UpdateWindowSurfaceRects(SDL_Window *window, const SDL_Rect *rects,
+                                          int numrects);
 void         SDL_GetWindowSize(SDL_Window *window, int *w, int *h);
 Uint32       SDL_GetWindowFlags(SDL_Window *window);
 int          SDL_SetWindowFullscreen(SDL_Window *window, Uint32 flags);

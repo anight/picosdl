@@ -26,6 +26,25 @@ void psdl_backend_video_init(int w, int h)
 	host_present_count = 0;
 }
 
+/* Partial pushes accumulate and are never cleared, as the real panel retains what
+ * it was last sent - which is what a single-buffered client relies on. */
+void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
+                                     int x, int y, int w, int h)
+{
+	for (int row = 0; row < h; ++row) {
+		int dy = y + row;
+		if (dy < 0 || dy >= PSDL_SCREEN_H)
+			continue;
+		int cx = x, cw = w;
+		if (cx < 0) { cw += cx; cx = 0; }
+		if (cx + cw > PSDL_SCREEN_W) cw = PSDL_SCREEN_W - cx;
+		if (cw <= 0)
+			continue;
+		memcpy(host_last_frame + (size_t)dy * PSDL_SCREEN_W + cx,
+		       pixels + (size_t)dy * pitch + cx, (size_t)cw);
+	}
+}
+
 void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 {
 	for (int y = 0; y < h && y < PSDL_SCREEN_H; ++y)
