@@ -419,7 +419,7 @@ void bt_app_setup(void) {
     att_server_init(profile_data, NULL, NULL);
     sdp_init();
 
-    gap_set_local_name("picosdl-bt");
+    gap_set_local_name("picosdl");
 
     kbd_decode_init(&on_key_event, &bt_app_set_keyboard_leds);
 
