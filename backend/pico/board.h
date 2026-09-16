@@ -131,6 +131,11 @@
  * Audio - MAX98357A over I2S on PIO1
  * ========================================================================
  *
+ * Whether audio is built at all is a build choice: PICOSDL_AUDIO in
+ * CMakeLists.txt. With it off none of this is used, PIO1 and DMA channels 4 and 5
+ * are free, core 1 has nothing to do, and SDL_OpenAudio() fails with a clear
+ * error. The pins below are still the board's, which is why they stay here.
+ *
  * LRCLK is always BCLK + 1 and cannot be moved: the PIO program side-sets two
  * bits based at the BCLK pin.
  */

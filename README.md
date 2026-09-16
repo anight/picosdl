@@ -196,16 +196,31 @@ The ST7789 driver is a submodule, so:
 git submodule update --init
 ```
 
-### Choosing which inputs to build
+### Choosing what to build
 
-Three CMake options, independent, all defaulting on, and **none required**:
+Four CMake options, independent, all defaulting on, and **none required**:
 
 ```bash
 cmake -S . -B build \
   -DPICOSDL_INPUT_BT_KEYBOARD=OFF \
   -DPICOSDL_INPUT_JOYSTICK=ON \
-  -DPICOSDL_INPUT_GAMEPAD=OFF
+  -DPICOSDL_INPUT_GAMEPAD=OFF \
+  -DPICOSDL_AUDIO=OFF
 ```
+
+`PICOSDL_AUDIO=OFF` is for a board with no MAX98357A and no speaker, which is a
+normal thing to have. The I2S driver and its PIO program are not built, and
+`SDL_OpenAudio()` fails with a clear error rather than pretending — that is what SDL
+does when there is no device, so a client that handles the desktop case already
+handles this one. SDLPoP sets `digi_unavailable` and plays silently; picosdl's demo
+prints the error and carries on. Succeeding and never calling the callback would be
+worse: a client would have no way to know, and would spend its mixing budget on
+samples nothing consumes.
+
+It also frees PIO1, DMA channels 4 and 5, and core 1, which does nothing else in
+this library but mix. `PSDL_SetMasterVolume()` still works — it remembers a value
+and applies it to nothing, because it is public API and a client should not need
+its own `#if` around a volume control.
 
 Off means absent, not ignored: the driver is not compiled. A build with all three
 off is legitimate and produces a library with a display and a speaker and no way to
@@ -219,22 +234,39 @@ twice over — the BLE and Classic stacks, because a keyboard may be either and 
 cannot tell from the outside — plus the CYW43 driver and that chip's firmware blob.
 The blob alone is 234 KB of flash and is not code, so nothing else can shrink it.
 
-*Measured* on one client's firmware, all eight combinations built clean:
+*Measured* on one client's firmware. All sixteen combinations build clean, with no
+warnings — the corners as much as the middle:
 
-| BT | joystick | gamepad | `.text` | `.bss` |
-|---|---|---|---|---|
-| on | on | on | 1,939,880 | 357,020 |
-| on | on | off | 1,937,248 | 357,012 |
-| on | off | on | 1,938,112 | 356,988 |
-| on | off | off | 1,935,168 | 356,948 |
-| **off** | on | on | **1,508,640** | **334,840** |
-| off | on | off | 1,506,008 | 334,832 |
-| off | off | on | 1,506,864 | 334,804 |
-| off | off | off | 1,503,944 | 334,768 |
+| audio | BT | joystick | gamepad | `.text` | `.bss` |
+|---|---|---|---|---|---|
+| on | on | on | on | 1,939,952 | 357,020 |
+| on | on | on | off | 1,937,320 | 357,012 |
+| on | on | off | on | 1,938,184 | 356,988 |
+| on | on | off | off | 1,935,240 | 356,948 |
+| on | **off** | on | on | **1,508,712** | **334,840** |
+| on | off | on | off | 1,506,080 | 334,832 |
+| on | off | off | on | 1,506,936 | 334,804 |
+| on | off | off | off | 1,504,016 | 334,768 |
+| **off** | on | on | on | 1,936,824 | **351,812** |
+| off | on | on | off | 1,934,192 | 351,800 |
+| off | on | off | on | 1,935,048 | 351,776 |
+| off | on | off | off | 1,932,120 | 351,740 |
+| off | off | on | on | 1,505,200 | 329,600 |
+| off | off | on | off | 1,502,576 | 329,592 |
+| off | off | off | on | 1,503,432 | 329,568 |
+| **off** | **off** | **off** | **off** | **1,500,504** | **329,532** |
 
-So Bluetooth is **431 KB of flash and 22 KB of RAM**, and the other two are about
-2.6 KB and 1.8 KB. If you are short of space, there is only one of these worth
-switching off.
+Roughly, against everything on:
+
+| off | flash | RAM |
+|---|---|---|
+| Bluetooth | **431 KB** | **22 KB** |
+| audio | 3.1 KB | 5.2 KB |
+| joystick | 1.8 KB | 32 B |
+| gamepad | 2.6 KB | 8 B |
+
+If you are short of space there is only one of these worth switching off. The other
+three are about having the hardware, not about size.
 
 Two consequences worth knowing. The serial console (`s`, `r`, `n`, `d`, `v`) is
 BTstack's stdin plumbing, so it goes away with Bluetooth — including the volume

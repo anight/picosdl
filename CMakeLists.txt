@@ -80,8 +80,24 @@ option(PICOSDL_INPUT_BT_KEYBOARD "Bluetooth HID keyboard" ON)
 option(PICOSDL_INPUT_JOYSTICK    "Analog joystick on the ADC" ON)
 option(PICOSDL_INPUT_GAMEPAD     "I2C game controller (Adafruit Gamepad QT)" ON)
 
+#
+# Audio, on the same footing: optional, and a board without a MAX98357A and a
+# speaker is a normal thing to have.
+#
+# Off is not "silent with the machinery still there" - the I2S driver and the PIO
+# program are not built, and SDL_OpenAudio() fails with a clear error. That is the
+# honest answer to "open the audio device" when there is no audio device, and it is
+# what SDL itself does; both clients here already handle it, because opening audio
+# is allowed to fail on a desktop too.
+#
+# Turning it off also frees PIO1, DMA channels 4 and 5, and core 1 - which does
+# nothing else in this library but mix.
+#
+option(PICOSDL_AUDIO "I2S audio output (MAX98357A)" ON)
+
 message(STATUS "picosdl inputs: BT keyboard=${PICOSDL_INPUT_BT_KEYBOARD} "
                "joystick=${PICOSDL_INPUT_JOYSTICK} gamepad=${PICOSDL_INPUT_GAMEPAD}")
+message(STATUS "picosdl audio: ${PICOSDL_AUDIO}")
 
 add_library(picosdl STATIC
     src/psdl_init.c
@@ -97,14 +113,22 @@ add_library(picosdl STATIC
     src/psdl_gamecontroller.c
 
     backend/pico/psdl_pico_video.c
-    backend/pico/psdl_pico_audio.c
     backend/pico/psdl_pico_input.c
     backend/pico/psdl_pico_time.c
     backend/pico/psdl_pico_log.c
-    backend/pico/pio-i2s.c
 
     ${LCD_DRIVER_DIR}/dispPioSt7789.c
 )
+
+if (PICOSDL_AUDIO)
+    target_sources(picosdl PRIVATE
+        backend/pico/psdl_pico_audio.c
+        backend/pico/pio-i2s.c
+    )
+    pico_generate_pio_header(picosdl
+        ${CMAKE_CURRENT_LIST_DIR}/backend/pico/pio-i2s-out.pio)
+    target_compile_definitions(picosdl PUBLIC PSDL_HAVE_AUDIO=1)
+endif()
 
 if (PICOSDL_INPUT_JOYSTICK)
     target_sources(picosdl PRIVATE backend/pico/joystick.c)
@@ -143,7 +167,6 @@ target_include_directories(picosdl PRIVATE
     ${LCD_DRIVER_DIR}
 )
 
-pico_generate_pio_header(picosdl ${CMAKE_CURRENT_LIST_DIR}/backend/pico/pio-i2s-out.pio)
 if (PICOSDL_INPUT_BT_KEYBOARD)
     pico_btstack_make_gatt_header(picosdl PRIVATE ${BT_KEYBOARD_DIR}/kbd_host.gatt)
 endif()

@@ -29,6 +29,21 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
 		return -1;
 	}
 
+#if !PSDL_HAVE_AUDIO
+	/*
+	 * No audio hardware in this build, so say so and fail.
+	 *
+	 * Failing is the honest answer and the one SDL gives: opening an audio device
+	 * is allowed to fail on a desktop too, so a well-written client already has a
+	 * path for it. SDLPoP sets digi_unavailable and plays silently; picosdl's own
+	 * demo prints the error and carries on. Succeeding and then never calling the
+	 * callback would be worse - a client would have no way to know, and would spend
+	 * its mixing budget on samples nothing consumes.
+	 */
+	(void)obtained;
+	SDL_SetError("picosdl: built without audio (PICOSDL_AUDIO=OFF)");
+	return -1;
+#else
 	if (desired->format != AUDIO_S16SYS) {
 		SDL_SetError("picosdl: only AUDIO_S16SYS is supported");
 		return -1;
@@ -51,14 +66,17 @@ int SDL_OpenAudio(SDL_AudioSpec *desired, SDL_AudioSpec *obtained)
 	if (obtained != NULL)
 		*obtained = s_spec;
 	return 0;
+#endif /* PSDL_HAVE_AUDIO */
 }
 
 void SDL_CloseAudio(void)
 {
 	if (!s_open)
 		return;
+#if PSDL_HAVE_AUDIO
 	psdl_backend_audio_pause(1);
 	psdl_backend_audio_close();
+#endif
 	s_open   = 0;
 	s_paused = 1;
 }
@@ -68,7 +86,9 @@ void SDL_PauseAudio(int pause_on)
 	if (!s_open)
 		return;
 	s_paused = pause_on ? 1 : 0;
+#if PSDL_HAVE_AUDIO
 	psdl_backend_audio_pause(s_paused);
+#endif
 }
 
 SDL_AudioStatus SDL_GetAudioStatus(void)
@@ -78,9 +98,17 @@ SDL_AudioStatus SDL_GetAudioStatus(void)
 	return s_paused ? SDL_AUDIO_PAUSED : SDL_AUDIO_PLAYING;
 }
 
+#if PSDL_HAVE_AUDIO
 void SDL_LockAudio(void)   { psdl_backend_audio_lock(); }
 void SDL_UnlockAudio(void) { psdl_backend_audio_unlock(); }
+#else
+/* Nothing mixes on another core, so there is nothing to lock against. Present
+ * because clients bracket their state changes with these unconditionally. */
+void SDL_LockAudio(void)   { }
+void SDL_UnlockAudio(void) { }
+#endif
 
+#if PSDL_HAVE_AUDIO
 /*
  * Called by the backend to fill one block. Always writes every frame: an
  * underrun that leaves stale data in the buffer is a loud repeating buzz,
@@ -99,12 +127,37 @@ void psdl_audio_render(Sint16 *buf, int frames)
 	psdl_backend_audio_unlock();
 }
 
+#endif /* PSDL_HAVE_AUDIO */
+
 void psdl_audio_init(void)
 {
 	s_open   = 0;
 	s_paused = 1;
 	memset(&s_spec, 0, sizeof(s_spec));
 }
+
+#if !PSDL_HAVE_AUDIO
+/*
+ * The master volume with no mixer to apply it.
+ *
+ * Kept rather than dropped because it is public API: a client may read or set it
+ * whatever the build, and having it vanish would mean every caller needs its own
+ * #if. The value is remembered and does nothing, which is the truthful behaviour
+ * for a volume control with no output.
+ *
+ * With audio on, these live in the backend beside the mixer that uses them.
+ */
+static int s_silent_volume = PSDL_DEFAULT_VOLUME;
+
+void PSDL_SetMasterVolume(int volume)
+{
+	if (volume < 0)                 volume = 0;
+	if (volume > PSDL_VOLUME_UNITY) volume = PSDL_VOLUME_UNITY;
+	s_silent_volume = volume;
+}
+
+int PSDL_GetMasterVolume(void) { return s_silent_volume; }
+#endif /* !PSDL_HAVE_AUDIO */
 
 /* --------------------------------------------------- volume keys */
 

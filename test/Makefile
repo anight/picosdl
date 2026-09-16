@@ -15,7 +15,10 @@
 
 CC     ?= cc
 ROOT   := ..
-CFLAGS := -std=c11 -Wall -Wextra -g -I $(ROOT)/include -I $(ROOT)/src
+# PSDL_HAVE_AUDIO: this backend implements the audio interface, so say so - see the
+# note in picopop's tools/Makefile.
+CFLAGS := -std=c11 -Wall -Wextra -g -DPSDL_HAVE_AUDIO=1 \
+          -I $(ROOT)/include -I $(ROOT)/src
 LIB    := $(wildcard $(ROOT)/src/psdl_*.c)
 SRC    := test_picosdl.c host_backend.c $(LIB)
 OUT    := /tmp/picosdl-test
