@@ -23,12 +23,26 @@
 #define PSDL_SCREEN_H 200
 #endif
 
-/* The LIFO arena that backs peel surfaces (see PLAN.md section 6f). Peels are
+/*
+ * The LIFO arena that backs peel surfaces (see PLAN.md section 6f). Peels are
  * created and restored in strict stack order, so a bump pointer is enough and
- * fragmentation is structurally impossible. Size this from the high-water mark
- * measured on the desktop build, not from the worst case. */
+ * fragmentation is structurally impossible.
+ *
+ * 16 KB, against a 6,700-byte peak measured over 400,000 presents of one client
+ * covering its title screen, attract demo and gameplay. It was 28 KB, which was
+ * a guess that happened to be comfortable. Paths that wait for a human are not
+ * in that measurement - a name-entry screen that holds a peel open while the
+ * player types pins everything allocated above it - so the margin is there for
+ * those, not for growth.
+ *
+ * When this runs out, resist raising it until you have read PSDL_DumpArena().
+ * The arena has been exhausted twice, once by a 16.5 KB surface nothing read and
+ * once by a leak, and on both occasions the total looked like ordinary demand.
+ * The exhaustion message names the allocation that happened to be last, never
+ * the one at fault; the dump names both.
+ */
 #ifndef PSDL_ARENA_BYTES
-#define PSDL_ARENA_BYTES (28 * 1024)
+#define PSDL_ARENA_BYTES (16 * 1024)
 #endif
 
 /*
