@@ -3,7 +3,7 @@
 # Everything in src/ is portable C - the hardware lives behind the backend
 # interface - so the blitters, the arena and the event ring can be tested with a
 # plain compiler and a sanitiser, no board required. This is also the first
-# piece of the host backend PLAN.md phase 3 calls for.
+# piece of the host backend TODO.md calls for.
 #
 #   make -C test        build and run
 #   make -C test asan   the same, under AddressSanitizer and UBSan

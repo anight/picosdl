@@ -24,9 +24,9 @@
 #endif
 
 /*
- * The LIFO arena that backs peel surfaces (see PLAN.md section 6f). Peels are
- * created and restored in strict stack order, so a bump pointer is enough and
- * fragmentation is structurally impossible.
+ * The LIFO arena that backs peel surfaces. Peels are created and restored in
+ * strict stack order, so a bump pointer is enough and fragmentation is
+ * structurally impossible.
  *
  * 16 KB, against a 6,700-byte peak measured over 400,000 presents of one client
  * covering its title screen, attract demo and gameplay. It was 28 KB, which was

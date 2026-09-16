@@ -2,7 +2,7 @@
  * A backend that does nothing, so picosdl can be compiled and exercised on a
  * PC.
  *
- * This is the seed of the "host" backend PLAN.md phase 3 calls for: the same
+ * This is the seed of the "host" backend TODO.md calls for: the same
  * picosdl, with the presentation half replaced. Right now it only captures what
  * would have been pushed to the panel, which is enough for tests; giving it a
  * real SDL2 window later is a change to this file alone.

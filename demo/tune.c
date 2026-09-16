@@ -13,9 +13,9 @@
  * budget is real, and a tune playing continuously is what makes the cost visible
  * on the status line - but now none of that depends on anything but this file.
  *
- * No libm. The project forbids linking it (PLAN.md section 0), and there is no
- * need: pitch comes from a twelve-entry table of the lowest octave, shifted up by
- * whole octaves, and the waveform is arithmetic on a phase accumulator.
+ * No libm. Clients of this library tend to ban it, and there is no need for it
+ * here: pitch comes from a twelve-entry table of the lowest octave, shifted up
+ * by whole octaves, and the waveform is arithmetic on a phase accumulator.
  */
 #include "tune.h"
 
