@@ -546,10 +546,19 @@ at once. Known gaps are in `TODO.md`.
 
 ## Licence and provenance
 
-The library is GPLv2-or-later, matching the code it was extracted alongside.
+**BSD-2-Clause** — see [`LICENSE`](LICENSE).
 
-`pio-st7789` and `pio-i2s` are separate repositories, included as submodules -
-our own forks of their upstream projects, each carried on its own branch.
-pio-i2s is BSD-3 and carries its own terms.
-`backend/pico/bt` is vendored from the author's own earlier bring-up project and
-carries its original terms.
+Permissive on purpose. This library contains no code from the game it was written
+for: it is an independent implementation of the slice of SDL2 that game uses, and
+everything it depends on is permissive too. A copyleft licence would contradict
+the one thing the design keeps insisting on, which is that picosdl is reusable by
+anything - including firmware that is not open source.
+
+It was previously described here as GPLv2-or-later, "matching the code it was
+extracted alongside". That was wrong: being built next to a GPL program does not
+make a library derived from it.
+
+Parts that came from elsewhere keep their own terms, and `LICENSE` lists them:
+`backend/pico/bt` carries BSD-3-Clause material from BTstack and pico-examples,
+the 9x14 font is derived from a public-domain X11 font, and `pio-st7789` and
+`pio-i2s` are submodules with their own licence files.

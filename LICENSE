@@ -1,0 +1,54 @@
+BSD 2-Clause License
+
+Copyright (c) 2026, Andrei Nigmatulin
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+--------------------------------------------------------------------------------
+Components under their own terms
+--------------------------------------------------------------------------------
+
+The above covers picosdl's own code. These parts came from elsewhere and keep
+the licences they arrived with:
+
+  backend/pico/bt/          A Bluetooth HID keyboard host built on BTstack.
+                            btstack_config.h is derived from the pico-examples
+                            Pico W Bluetooth configuration, and kbd_host.gatt
+                            follows BTstack's own example, so this directory
+                            carries BSD-3-Clause material:
+                              Copyright (C) 2009 BlueKitchen GmbH
+                              Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+                            BSD-3-Clause adds a no-endorsement clause that
+                            BSD-2-Clause does not have, and it is retained here
+                            rather than dropped.
+
+  src/psdl_font9x14.inc     Generated from the X11 misc-fixed 9x15 font, whose
+                            COPYING reads in full: "Public domain font. Share
+                            and enjoy."
+
+  pio-st7789/               Submodules, each with its own LICENSE file:
+  pio-i2s/                  BSD-2-Clause and BSD-3-Clause respectively.
+
+The Raspberry Pi Pico SDK, which picosdl builds against, is BSD-3-Clause and is
+not distributed here.

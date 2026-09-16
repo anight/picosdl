@@ -1,8 +1,9 @@
 /*
  * BTstack configuration for picosdl's Bluetooth HID keyboard backend.
  *
- * Derived from the pico-examples Pico W Bluetooth config, trimmed to what a
- * dual-mode (Classic + LE) HID *host* actually needs. The buffer/flow-control
+ * Derived from the pico-examples Pico W Bluetooth config - Copyright (c) 2020
+ * Raspberry Pi (Trading) Ltd., BSD-3-Clause; see ../../../LICENSE - and trimmed to
+ * what a dual-mode (Classic + LE) HID *host* actually needs. The buffer/flow-control
  * numbers are deliberately left as upstream tuned them: they exist to stop the
  * CYW43 shared SPI bus from overrunning, and lowering them causes dropped ACL
  * packets rather than saving anything useful.
