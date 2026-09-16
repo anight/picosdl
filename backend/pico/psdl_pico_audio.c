@@ -199,6 +199,10 @@ void psdl_backend_audio_open(int freq, int channels, int block_frames)
 	s_i2s_config.sampleRate = freq;
 	s_i2s_config.blockSize  = PSDL_AUDIO_BLOCK_FRAMES;
 	s_i2s_config.pio        = pio1;   /* pio0 belongs to the display */
+	/* The display's DMA channels are polled, not interrupt-driven, so nothing
+	 * else here wants a DMA IRQ. PioI2S_init panics on any value that is not
+	 * DMA_IRQ_0 or DMA_IRQ_1, and a zeroed config is neither. */
+	s_i2s_config.dmaIRQ     = DMA_IRQ_0;
 	s_open_rate             = freq;
 
 	multicore_launch_core1(core1_audio_main);

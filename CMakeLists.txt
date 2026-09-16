@@ -54,13 +54,16 @@ endif()
 # carries no dependency on any particular game.
 #
 #   pio-st7789          the ST7789 PIO driver, a submodule of its own repo
+#   pio-i2s             the I2S output driver, a submodule of its own repo
 #   backend/pico/bt     the Bluetooth HID keyboard, vendored source
 #
-# pio-st7789 is a peer, not a vendored third party: it is our own fork, carried
-# on its own branch and edited alongside this code - board.h is where its pin
-# numbers come from. It sits at the top level for the same reason picosdl and
-# SDLPoP do in the project above, rather than under a vendor/ directory that
-# would suggest it is someone else's code we merely bundle.
+# Both are peers rather than vendored third parties: each is our own fork of an
+# upstream project, carried on its own branch and edited alongside this code.
+# pio-st7789 takes its pin numbers from board.h; pio-i2s carries one change, a
+# clock-divider check that upstream makes stricter than the hardware needs. They
+# sit at the top level for the same reason picosdl and SDLPoP do in the project
+# above, rather than under a vendor/ directory that would suggest they are
+# someone else's code we merely bundle.
 #
 set(LCD_DRIVER_DIR ${CMAKE_CURRENT_LIST_DIR}/pio-st7789)
 set(BT_KEYBOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/backend/pico/bt)
@@ -68,6 +71,11 @@ set(BT_KEYBOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/backend/pico/bt)
 if(NOT EXISTS ${LCD_DRIVER_DIR}/dispPioSt7789.c)
     message(FATAL_ERROR
         "pio-st7789 is empty - run: git submodule update --init --recursive")
+endif()
+
+if(PICOSDL_AUDIO AND NOT EXISTS ${CMAKE_CURRENT_LIST_DIR}/pio-i2s/src/pio-i2s.c)
+    message(FATAL_ERROR
+        "pio-i2s is empty - run: git submodule update --init --recursive")
 endif()
 
 # ----------------------------------------------------------------- picosdl
@@ -128,12 +136,15 @@ add_library(picosdl STATIC
 )
 
 if (PICOSDL_AUDIO)
-    target_sources(picosdl PRIVATE
-        backend/pico/psdl_pico_audio.c
-        backend/pico/pio-i2s.c
-    )
-    pico_generate_pio_header(picosdl
-        ${CMAKE_CURRENT_LIST_DIR}/backend/pico/pio-i2s-out.pio)
+    target_sources(picosdl PRIVATE backend/pico/psdl_pico_audio.c)
+
+    # pio-i2s brings its own library target, its own include directory and a
+    # pre-generated PIO header (pio_version 0, so it assembles for both RP2040
+    # and RP2350) - so there is nothing to add to picosdl's own sources and no
+    # pico_generate_pio_header call. Its example and tests build only when it is
+    # the top-level project, which it is not here.
+    add_subdirectory(pio-i2s EXCLUDE_FROM_ALL)
+    target_link_libraries(picosdl PUBLIC pio-i2s-lib)
     target_compile_definitions(picosdl PUBLIC PSDL_HAVE_AUDIO=1)
 endif()
 

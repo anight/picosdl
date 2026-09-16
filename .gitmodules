@@ -2,3 +2,7 @@
 	path = pio-st7789
 	url = git@github.com:anight/pio-st7789.git
 	branch = picopop
+[submodule "pio-i2s"]
+	path = pio-i2s
+	url = git@github.com:anight/pio-i2s.git
+	branch = picopop

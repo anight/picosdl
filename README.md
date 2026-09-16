@@ -191,6 +191,7 @@ backend/pico/         the hardware half
   bt/                   Bluetooth HID keyboard
   seesaw_gamepad.c      Adafruit Gamepad QT over I2C
 pio-st7789/           the ST7789 PIO driver, a submodule
+pio-i2s/              the I2S output driver, a submodule
 test/                 host tests: builds with cc, runs on a PC
 cmake/                the Pico SDK bootstrap, shared with embedders
 ```
@@ -499,12 +500,17 @@ place. The driver's own names are unchanged. Upstream's commented-out pins for t
 backlight, touch controller and SD card are dropped rather than carried, since
 nothing here drives them and two commented copies would only drift apart.
 
-**The I2S divider check was wrong** in the driver this forked from. It rejected any
-ratio whose fractional part was not a multiple of 1/16, on the grounds that a
-PIO divider has "16 fractional bits". It has eight — the divider is 16.8 fixed
-point — so the step is 1/256. 8 kHz at 128 MHz divides exactly, so nothing had
-noticed. This fork checks the range the hardware can express and warns on the
-resulting error rather than on whether it is zero.
+**The I2S divider check demanded an exact ratio.** Upstream panics unless the
+requested divider lands exactly on a multiple of 1/256. The divider's eight
+fractional bits are a rounding target, not a constraint, and requiring exactness
+rejects almost every rate the library exists to produce: at 32-bit stereo,
+11025, 22050 and 44100 Hz are all fractional at 128, 138 and 150 MHz alike, and
+only 8000 Hz happens to divide exactly. 22050 Hz at 138 MHz needs 48.894558,
+which rounds to a real rate of 22050.012 Hz — an error of 0.5 ppm, four orders
+of magnitude below anything audible, and upstream refused to boot on it. The
+fork measures what the rounding costs and compares it against a configurable
+tolerance, `PioI2S_MAX_CLOCK_ERROR_PPM`. It is the fork's only change, and it is
+worth offering upstream.
 
 ## Footprint
 
@@ -540,7 +546,8 @@ at once. Known gaps are in `TODO.md`.
 
 The library is GPLv2-or-later, matching the code it was extracted alongside.
 
-`pio-st7789` is a separate repository, included as a submodule - our own fork of
-the upstream driver, carried on its own branch.
-`backend/pico/bt` and `backend/pico/pio-i2s.*` are vendored from the author's own
-earlier bring-up projects and carry their original terms.
+`pio-st7789` and `pio-i2s` are separate repositories, included as submodules -
+our own forks of their upstream projects, each carried on its own branch.
+pio-i2s is BSD-3 and carries its own terms.
+`backend/pico/bt` is vendored from the author's own earlier bring-up project and
+carries its original terms.
