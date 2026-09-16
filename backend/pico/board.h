@@ -107,8 +107,8 @@
  * Display - ST7789 over PIO0, 4-wire SPI
  * ========================================================================
  *
- * The vendored driver in vendor/pio-st7789 has its own pinout.h with its own
- * names; it derives them from these, so these are the only definitions. MISO is
+ * The driver in pio-st7789 has its own pinout.h with its own names; it derives
+ * them from these, so these are the only definitions. MISO is
  * declared because the driver configures the pin, though nothing reads it - the
  * panel is write-only in this design.
  *

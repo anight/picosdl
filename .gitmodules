@@ -1,3 +1,4 @@
-[submodule "vendor/pio-st7789"]
-	path = vendor/pio-st7789
+[submodule "pio-st7789"]
+	path = pio-st7789
 	url = git@github.com:anight/pio-st7789.git
+	branch = picopop

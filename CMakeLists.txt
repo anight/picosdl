@@ -50,18 +50,24 @@ if (NOT TARGET pico_btstack_cyw43)
         "No Bluetooth support for PICO_BOARD='${PICO_BOARD}'. Use pico_w or pico2_w.")
 endif()
 
-# The hardware drivers live inside picosdl now, so the library is self-contained
-# and carries no dependency on any particular game.
+# The hardware drivers live inside picosdl, so the library is self-contained and
+# carries no dependency on any particular game.
 #
-#   vendor/pio-st7789   the ST7789 PIO driver, a submodule of its own repo
+#   pio-st7789          the ST7789 PIO driver, a submodule of its own repo
 #   backend/pico/bt     the Bluetooth HID keyboard, vendored source
 #
-set(LCD_DRIVER_DIR ${CMAKE_CURRENT_LIST_DIR}/vendor/pio-st7789)
+# pio-st7789 is a peer, not a vendored third party: it is our own fork, carried
+# on its own branch and edited alongside this code - board.h is where its pin
+# numbers come from. It sits at the top level for the same reason picosdl and
+# SDLPoP do in the project above, rather than under a vendor/ directory that
+# would suggest it is someone else's code we merely bundle.
+#
+set(LCD_DRIVER_DIR ${CMAKE_CURRENT_LIST_DIR}/pio-st7789)
 set(BT_KEYBOARD_DIR ${CMAKE_CURRENT_LIST_DIR}/backend/pico/bt)
 
 if(NOT EXISTS ${LCD_DRIVER_DIR}/dispPioSt7789.c)
     message(FATAL_ERROR
-        "vendor/pio-st7789 is empty - run: git submodule update --init --recursive")
+        "pio-st7789 is empty - run: git submodule update --init --recursive")
 endif()
 
 # ----------------------------------------------------------------- picosdl
@@ -213,8 +219,8 @@ if (PICOSDL_INPUT_BT_KEYBOARD)
     target_compile_definitions(picosdl PUBLIC CYW43_LWIP=0)
 endif()
 
-# Strict warnings for our own code only - the vendored drivers and the SDK are
-# not warning-clean and compile into the same target.
+# Strict warnings for our own code only - the drivers and the SDK are not
+# warning-clean and compile into the same target.
 set_source_files_properties(
     src/psdl_init.c src/psdl_surface.c src/psdl_blit.c src/psdl_palette.c
     src/psdl_video.c src/psdl_events.c src/psdl_timer.c src/psdl_audio.c

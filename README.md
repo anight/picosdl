@@ -190,7 +190,7 @@ src/                  portable - no hardware, only the backend interface
 backend/pico/         the hardware half
   bt/                   Bluetooth HID keyboard
   seesaw_gamepad.c      Adafruit Gamepad QT over I2C
-vendor/pio-st7789/    the ST7789 PIO driver, a submodule
+pio-st7789/           the ST7789 PIO driver, a submodule
 test/                 host tests: builds with cc, runs on a PC
 cmake/                the Pico SDK bootstrap, shared with embedders
 ```
@@ -405,7 +405,7 @@ event-ring overflow.
 ## The hardware
 
 **Every pin number and the system clock are in `backend/pico/board.h`**, and
-nothing else defines either - the vendored ST7789 driver's `pinout.h` derives its
+nothing else defines either - the ST7789 driver's `pinout.h` derives its
 names from there too. Porting to a differently wired board, or changing the clock,
 is that one file. The clock comment in it lists which reachable frequencies are
 worth wanting and what each does to the panel, the frame time and the sample rate.
@@ -493,18 +493,18 @@ cores does not stop the sound: a debugger halt leaves the last two buffers
 cycling into the DAC. Stopping the PIO state machines is what silences it, which
 is what `picodev.sh` does before programming.
 
-**The pin numbers moved out.** `vendor/pio-st7789/pinout.h` held them literally;
+**The pin numbers moved out.** `pio-st7789/pinout.h` held them literally;
 it now derives them from `backend/pico/board.h` so the board is described in one
 place. The driver's own names are unchanged. Upstream's commented-out pins for the
 backlight, touch controller and SD card are dropped rather than carried, since
 nothing here drives them and two commented copies would only drift apart.
 
-**The I2S divider check was wrong** in the driver this vendored. It rejected any
+**The I2S divider check was wrong** in the driver this forked from. It rejected any
 ratio whose fractional part was not a multiple of 1/16, on the grounds that a
 PIO divider has "16 fractional bits". It has eight — the divider is 16.8 fixed
 point — so the step is 1/256. 8 kHz at 128 MHz divides exactly, so nothing had
-noticed. The vendored copy checks the range the hardware can express and warns
-on the resulting error rather than on whether it is zero.
+noticed. This fork checks the range the hardware can express and warns on the
+resulting error rather than on whether it is zero.
 
 ## Footprint
 
@@ -540,6 +540,7 @@ at once. Known gaps are in `TODO.md`.
 
 The library is GPLv2-or-later, matching the code it was extracted alongside.
 
-`vendor/pio-st7789` is a separate repository, included as a submodule.
+`pio-st7789` is a separate repository, included as a submodule - our own fork of
+the upstream driver, carried on its own branch.
 `backend/pico/bt` and `backend/pico/pio-i2s.*` are vendored from the author's own
 earlier bring-up projects and carry their original terms.
