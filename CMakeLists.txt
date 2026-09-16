@@ -127,7 +127,7 @@ add_library(picosdl STATIC
     src/psdl_rwops.c
     src/psdl_stubs.c
     src/psdl_gamecontroller.c
-    src/psdl_font5x7.c
+    src/psdl_font.c
 
     backend/pico/psdl_pico_video.c
     backend/pico/psdl_pico_input.c
@@ -238,7 +238,7 @@ set_source_files_properties(
     src/psdl_init.c src/psdl_surface.c src/psdl_blit.c src/psdl_palette.c
     src/psdl_video.c src/psdl_events.c src/psdl_timer.c src/psdl_audio.c
     src/psdl_rwops.c src/psdl_stubs.c src/psdl_gamecontroller.c
-    src/psdl_font5x7.c
+    src/psdl_font.c
     backend/pico/psdl_pico_video.c backend/pico/psdl_pico_audio.c
     backend/pico/psdl_pico_input.c backend/pico/psdl_pico_time.c
     backend/pico/psdl_pico_log.c
