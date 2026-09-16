@@ -99,6 +99,43 @@ void psdl_push_joy_button(int button, int pressed)
 	queue_push(&ev);
 }
 
+/* ------------------------------------------------------- game controller */
+
+void psdl_push_controller_axis(int axis, Sint16 value)
+{
+	SDL_Event ev;
+	memset(&ev, 0, sizeof(ev));
+	ev.type            = SDL_CONTROLLERAXISMOTION;
+	ev.caxis.timestamp = psdl_backend_ticks_ms();
+	ev.caxis.which     = 0;
+	ev.caxis.axis      = (Uint8)axis;
+	ev.caxis.value     = value;
+	queue_push(&ev);
+}
+
+void psdl_push_controller_button(int button, int pressed)
+{
+	SDL_Event ev;
+	memset(&ev, 0, sizeof(ev));
+	ev.type              = pressed ? SDL_CONTROLLERBUTTONDOWN : SDL_CONTROLLERBUTTONUP;
+	ev.cbutton.timestamp = psdl_backend_ticks_ms();
+	ev.cbutton.which     = 0;
+	ev.cbutton.button    = (Uint8)button;
+	ev.cbutton.state     = pressed ? SDL_PRESSED : SDL_RELEASED;
+	queue_push(&ev);
+}
+
+void psdl_push_controller_device(int added)
+{
+	SDL_Event ev;
+	memset(&ev, 0, sizeof(ev));
+	ev.type              = added ? SDL_CONTROLLERDEVICEADDED
+	                             : SDL_CONTROLLERDEVICEREMOVED;
+	ev.cdevice.timestamp = psdl_backend_ticks_ms();
+	ev.cdevice.which     = 0;
+	queue_push(&ev);
+}
+
 void psdl_push_quit(void)
 {
 	SDL_Event ev;

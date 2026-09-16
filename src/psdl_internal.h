@@ -116,9 +116,19 @@ SDL_Surface *psdl_screen_surface(void);
  * joystick_set_* ones update the state SDL_JoystickGetAxis/Button reports. */
 void psdl_push_key(SDL_Scancode scancode, int pressed, Uint16 mod);
 void psdl_push_joy_axis(int axis, Sint16 value);
+void psdl_push_controller_axis(int axis, Sint16 value);
+void psdl_push_controller_button(int button, int pressed);
+void psdl_push_controller_device(int added);
 void psdl_push_joy_button(int button, int pressed);
 void psdl_push_quit(void);
 void psdl_joystick_set_axis(int axis, Sint16 value);
+
+/* Game controller state, fed by whichever backend has one. Presence drives
+ * SDL_IsGameController(); the axis and button setters only emit an event when the
+ * value actually changes, so a backend may call them every poll. */
+void psdl_controller_set_present(int present);
+void psdl_controller_set_axis(int axis, Sint16 value);
+void psdl_controller_set_button(int button, int pressed);
 void psdl_joystick_set_button(int button, int pressed);
 
 /* Called by the audio backend from whichever core runs the mixer: fills buf

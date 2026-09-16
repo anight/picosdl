@@ -405,9 +405,9 @@ typedef struct SDL_UserEvent {
 typedef struct SDL_QuitEvent { Uint32 type; Uint32 timestamp; } SDL_QuitEvent;
 
 /*
- * Game-controller and text-input events. Nothing here ever produces one - see
- * the note above SDL_GameControllerOpen - but the game switches on them, so
- * the members have to exist for it to compile unmodified.
+ * Game-controller and text-input events. The controller ones are real when a
+ * backend has found a pad - see psdl_gamecontroller.c. Text input is not produced
+ * by anything, but the game switches on it, so the members have to exist.
  */
 typedef struct SDL_ControllerAxisEvent {
 	Uint32 type; Uint32 timestamp; Sint32 which;
@@ -451,9 +451,9 @@ void SDL_FlushEvent(Uint32 type);
 
 typedef struct SDL_Joystick SDL_Joystick;
 
-/* Declared but never defined: the game has pointer members of these types
- * (data.h:638, :646) and passes them to functions that do nothing here.
- * There is no game controller and no force feedback on this hardware. */
+/* SDL_GameController is real and defined in psdl_gamecontroller.c when a backend
+ * finds a pad. SDL_Haptic is declared and never defined: there is no force
+ * feedback on this hardware, and the game only holds a pointer to one. */
 typedef struct SDL_GameController SDL_GameController;
 typedef struct SDL_Haptic SDL_Haptic;
 
@@ -473,7 +473,8 @@ int           SDL_JoystickRumble(SDL_Joystick *joystick, Uint16 low, Uint16 high
  * Game controller and haptics.
  *
  * These exist so the game compiles and links unmodified; none of them do
- * anything. SDL_IsGameController() returns false, so SDLPoP never opens a
+ * anything for haptics. SDL_IsGameController() reports a real pad when one is
+ * attached; with none it returns false, so a game never opens a
  * controller and falls through to its joystick path, which is what the board's
  * analog stick actually is. The enumerators are SDL's own values, in SDL's
  * order, so that a future mapping layer can be dropped in without touching the
@@ -517,6 +518,10 @@ SDL_GameController *SDL_GameControllerFromInstanceID(Sint32 joyid);
 int                SDL_GameControllerAddMappingsFromFile(const char *file);
 int                SDL_GameControllerRumble(SDL_GameController *gamecontroller,
                                             Uint16 low, Uint16 high, Uint32 ms);
+Sint16             SDL_GameControllerGetAxis(SDL_GameController *gamecontroller,
+                                             int axis);
+Uint8              SDL_GameControllerGetButton(SDL_GameController *gamecontroller,
+                                               int button);
 
 SDL_Haptic *SDL_HapticOpen(int device_index);
 void        SDL_HapticClose(SDL_Haptic *haptic);

@@ -21,6 +21,7 @@
 #include "bt_app.h"
 #include "bt/debug.h"
 #include "joystick.h"
+#include "seesaw_gamepad.h"
 #include "kbd_decode.h"
 
 #include "psdl_internal.h"
@@ -116,6 +117,39 @@ static Sint16 axis_to_sdl(float v)
 	return (Sint16)(v * 32767.0f);
 }
 
+/*
+ * The controller's left stick has two possible sources, and both have to work.
+ *
+ * A client that finds a game controller stops listening to the joystick - SDLPoP
+ * does exactly that, discarding every SDL_JOYAXISMOTION once
+ * using_sdl_joystick_interface is clear - so simply adding a pad would make the
+ * board's own analog stick go dead. Instead both feed the controller's left stick
+ * and the larger deflection wins, per axis.
+ *
+ * Larger-magnitude rather than most-recent, because both sources are polled every
+ * frame and a source sitting at rest would otherwise overwrite a deflected one a
+ * few milliseconds later. Neither stick rests at exactly zero, so "wins" has to
+ * mean "is pushed further", not "changed last".
+ *
+ * The stick also stays on the joystick device for clients that want it there -
+ * picosdl's own demo reads it that way.
+ */
+static Sint16 s_stick_axis[2];   /* the board's ADC stick */
+static Sint16 s_pad_axis[2];     /* the I2C game pad */
+
+static void publish_left_stick(void)
+{
+	static const int axis_id[2] = { SDL_CONTROLLER_AXIS_LEFTX,
+	                                SDL_CONTROLLER_AXIS_LEFTY };
+	for (int i = 0; i < 2; ++i) {
+		int a = s_stick_axis[i], b = s_pad_axis[i];
+		int mag_a = a < 0 ? -a : a;
+		int mag_b = b < 0 ? -b : b;
+		psdl_controller_set_axis(axis_id[i], (Sint16)(mag_a >= mag_b ? a : b));
+	}
+}
+
+
 static void poll_joystick(void)
 {
 	Uint32 now = psdl_backend_ticks_ms();
@@ -128,6 +162,7 @@ static void poll_joystick(void)
 
 	/* joystick.c's Y is positive-up; SDL's is positive-down. */
 	Sint16 axis[2];
+	int moved = 0;
 	axis[0] = axis_to_sdl(joy.x);
 	axis[1] = axis_to_sdl(-joy.y);
 
@@ -142,13 +177,21 @@ static void poll_joystick(void)
 		s_last_axis[i] = axis[i];
 		psdl_joystick_set_axis(i, axis[i]);
 		psdl_push_joy_axis(i, axis[i]);
+		s_stick_axis[i] = axis[i];
+		moved = 1;
 	}
+	if (moved)
+		publish_left_stick();
 
 	int button = joy.pressed ? 1 : 0;
 	if (button != s_last_button) {
 		s_last_button = button;
 		psdl_joystick_set_button(0, button);
 		psdl_push_joy_button(0, button);
+		/* Pressing the stick down is a stick click, so report it as one. SDLPoP
+		 * ignores that button, which is the honest outcome: inventing a mapping
+		 * onto A or X would collide with the pad's own buttons of that name. */
+		psdl_controller_set_button(SDL_CONTROLLER_BUTTON_LEFTSTICK, button);
 	}
 }
 
@@ -162,6 +205,13 @@ void psdl_backend_input_init(void)
 
 	psdl_log_init();
 	joystickInit();
+
+#if PSDL_BOARD_GAMEPAD_ENABLE
+	/* Optional: absent hardware is not an error, and the analog stick carries on
+	 * either way. Must come before anything reports input capability, since this
+	 * is what decides whether SDL_IsGameController() is true. */
+	psdl_controller_set_present(seesaw_gamepad_init());
+#endif
 
 	if (cyw43_arch_init() != 0) {
 		printf("picosdl: cyw43_arch_init failed - is PICO_BOARD a wireless board?\n"
@@ -189,6 +239,61 @@ void psdl_backend_input_init(void)
 	printf("picosdl: input ready - Bluetooth searching, joystick calibrated\n");
 }
 
+
+/*
+ * The game controller, if one is attached.
+ *
+ * Readings go in as SDL controller axes and buttons, which is what makes the pad's
+ * labels mean anything: a client using SDL's mapped controller API gets "button Y"
+ * rather than "button 3". SDLPoP turns that into Y jumping, A crouching, X
+ * grabbing and Start or Back opening the menu, with no mapping table anywhere.
+ *
+ * Polled on the stick's schedule. A full read is three I2C transfers, about
+ * 1.03 ms at 400 kHz - see board.h.
+ */
+/*
+ * A pad axis to SDL's range.
+ *
+ * 0..1023 around a nominal 512, scaled to -32768..32767. The rest position is near
+ * but not exactly centre and the deadzone belongs to the client, so there is no
+ * calibration here - only the scale and, if the stick is installed that way round,
+ * the inversion.
+ *
+ * Clamped rather than just negated: a reading of 0 scales to -32768, whose negation
+ * does not fit in a Sint16.
+ */
+static Sint16 pad_axis_to_sdl(uint16_t raw, bool invert)
+{
+	int v = ((int)raw - 512) * 64;
+	if (invert)
+		v = -v;
+	if (v >  32767) v =  32767;
+	if (v < -32768) v = -32768;
+	return (Sint16)v;
+}
+
+static void poll_gamepad(void)
+{
+	if (!seesaw_gamepad_present())
+		return;
+
+	seesaw_gamepad_state_t g;
+	if (!seesaw_gamepad_read(&g))
+		return;        /* a dropped transfer: keep the last state rather than
+		                * inventing a centred stick */
+
+	s_pad_axis[0] = pad_axis_to_sdl(g.x, PSDL_BOARD_GAMEPAD_INVERT_X);
+	s_pad_axis[1] = pad_axis_to_sdl(g.y, PSDL_BOARD_GAMEPAD_INVERT_Y);
+	publish_left_stick();
+
+	psdl_controller_set_button(SDL_CONTROLLER_BUTTON_A,     g.a);
+	psdl_controller_set_button(SDL_CONTROLLER_BUTTON_B,     g.b);
+	psdl_controller_set_button(SDL_CONTROLLER_BUTTON_X,     g.x_btn);
+	psdl_controller_set_button(SDL_CONTROLLER_BUTTON_Y,     g.y_btn);
+	psdl_controller_set_button(SDL_CONTROLLER_BUTTON_BACK,  g.select);
+	psdl_controller_set_button(SDL_CONTROLLER_BUTTON_START, g.start);
+}
+
 void psdl_backend_input_poll(void)
 {
 	/* Core 0, outside any interrupt: the one place the queued log can be printed.
@@ -199,6 +304,7 @@ void psdl_backend_input_poll(void)
 	if (!s_ready)
 		return;
 	poll_joystick();
+	poll_gamepad();
 	/* Keyboard reports arrive on their own interrupt; nothing to poll. */
 }
 

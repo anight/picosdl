@@ -77,6 +77,7 @@ add_library(picosdl STATIC
     src/psdl_audio.c
     src/psdl_rwops.c
     src/psdl_stubs.c
+    src/psdl_gamecontroller.c
 
     backend/pico/psdl_pico_video.c
     backend/pico/psdl_pico_audio.c
@@ -85,6 +86,7 @@ add_library(picosdl STATIC
     backend/pico/psdl_pico_log.c
     backend/pico/pio-i2s.c
     backend/pico/joystick.c
+    backend/pico/seesaw_gamepad.c
 
     ${LCD_DRIVER_DIR}/dispPioSt7789.c
 
@@ -118,6 +120,7 @@ target_link_libraries(picosdl PUBLIC
     pico_multicore
     hardware_adc
     hardware_dma
+    hardware_i2c
     hardware_pio
     pico_btstack_ble
     pico_btstack_classic
@@ -135,7 +138,8 @@ target_compile_definitions(picosdl PUBLIC
 set_source_files_properties(
     src/psdl_init.c src/psdl_surface.c src/psdl_blit.c src/psdl_palette.c
     src/psdl_video.c src/psdl_events.c src/psdl_timer.c src/psdl_audio.c
-    src/psdl_rwops.c src/psdl_stubs.c
+    src/psdl_rwops.c src/psdl_stubs.c src/psdl_gamecontroller.c
+    backend/pico/seesaw_gamepad.c
     backend/pico/psdl_pico_video.c backend/pico/psdl_pico_audio.c
     backend/pico/psdl_pico_input.c backend/pico/psdl_pico_time.c
     backend/pico/psdl_pico_log.c

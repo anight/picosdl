@@ -67,6 +67,42 @@ about. The Bluetooth stack hands over a usage; that usage is the scancode; it
 indexes the key-state array directly. There is no mapping table because there
 is nothing to map.
 
+### The game controller is a real SDL_GameController
+
+`SDL_IsGameController()` reports a pad when one is attached, and the
+`SDL_CONTROLLER*` events are real. That matters more than presenting another
+joystick would: SDL's controller API is *mapped*, so a client gets "button Y"
+rather than "button 3", and a pad with a labelled diamond does what the labels say.
+As a bare joystick the same pad would offer six anonymous buttons that most games
+ignore.
+
+`psdl_gamecontroller.c` is portable and knows nothing about how a pad is attached.
+A backend that finds one calls three feeders - present, axis, button - and the axis
+and button ones only emit an event when the value changes, so a backend may call
+them every poll. A backend with no pad calls none of them, `SDL_IsGameController()`
+stays false, and a client falls back to the joystick exactly as before. That is
+what the host backend does.
+
+`backend/pico` implements one: an Adafruit Gamepad QT on I2C1, which is a seesaw
+device - an ATtiny817 running Adafruit's firmware, with the stick on two ADC
+channels and the buttons on GPIO. It is optional; nothing answering at the address
+is not an error.
+
+Two things about it are worth knowing before adding another pad. Presence is a
+*write* that gets acknowledged, not a read: seesaw is entitled to NAK a bare read
+when no register has been selected, and a read-probe looks exactly like absent
+hardware. And Adafruit's driver waits 8 ms between writing a register pointer and
+reading the answer, which would cost 24 ms for the three registers a poll needs -
+longer than a frame. Measured, this device needs none: a poll is 1.03 ms at
+400 kHz. See the note in `board.h`.
+
+The board's own analog stick keeps working alongside a pad. Both feed the
+controller's left stick and the larger deflection wins per axis - larger rather
+than most-recent, because both are polled every frame and neither rests at exactly
+zero, so a stick at rest would otherwise overwrite a deflected one milliseconds
+later. A client that finds a controller stops listening to the joystick, so without
+this the board's stick would go dead the moment a pad was plugged in.
+
 ### The volume keys do not reach the game
 
 Volume up, volume down and mute are handled by the library and consumed: no
@@ -93,8 +129,10 @@ src/                  portable - no hardware, only the backend interface
   psdl_audio.c          SDL's pull-callback model over the backend
   psdl_rwops.c          memory RWops; file RWops fails cleanly
   psdl_stubs.c          joystick, and everything meaningless here
+  psdl_gamecontroller.c SDL_GameController, fed by whichever backend has a pad
 backend/pico/         the hardware half
   bt/                   Bluetooth HID keyboard
+  seesaw_gamepad.c      Adafruit Gamepad QT over I2C
 vendor/pio-st7789/    the ST7789 PIO driver, a submodule
 test/                 host tests: builds with cc, runs on a PC
 cmake/                the Pico SDK bootstrap, shared with embedders
@@ -267,6 +305,7 @@ knowing about the other, so the allocation is kept in one place,
 | GPIO 8–12, 15 | LCD: D/C, CS, SCK, MOSI, MISO, RESET |
 | GPIO 2, 3, 4 | I2S BCLK, LRCLK, DIN |
 | GPIO 27, 26, 22 | joystick X (ADC1), Y (ADC0), button (active low) |
+| GPIO 6, 7 | I2C1 SDA, SCL — game controller (optional) |
 | GPIO 0, 1 | UART console |
 
 **Init order is load-bearing.** The display driver hardcodes DMA channels 0–3

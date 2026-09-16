@@ -67,50 +67,13 @@ int SDL_JoystickRumble(SDL_Joystick *joystick, Uint16 low, Uint16 high, Uint32 m
 	return -1;   /* no haptics */
 }
 
-SDL_bool SDL_IsGameController(int joystick_index)
-{
-	(void)joystick_index;
-	return SDL_FALSE;   /* it is a bare analog stick, not a mapped pad */
-}
-
 /*
- * Game controller and haptics: present so the game links, inert at runtime.
+ * Game controller: implemented, not stubbed - see psdl_gamecontroller.c. The
+ * analog stick stays a joystick, and the two coexist: a game that finds a
+ * controller uses it, one that does not falls back to the calls above.
  *
- * Because SDL_IsGameController() is false the game never opens one, and no
- * SDL_CONTROLLER* event is ever pushed onto the ring, so its controller
- * branches are unreachable rather than merely harmless. The stick reaches the
- * game through the joystick calls above.
+ * Haptics remain inert. There is nothing on this hardware to shake.
  */
-SDL_GameController *SDL_GameControllerOpen(int joystick_index)
-{
-	(void)joystick_index;
-	return NULL;
-}
-
-void SDL_GameControllerClose(SDL_GameController *gamecontroller)
-{
-	(void)gamecontroller;
-}
-
-SDL_GameController *SDL_GameControllerFromInstanceID(Sint32 joyid)
-{
-	(void)joyid;
-	return NULL;
-}
-
-int SDL_GameControllerAddMappingsFromFile(const char *file)
-{
-	(void)file;
-	return -1;   /* no mapping database, and no filesystem to hold one */
-}
-
-int SDL_GameControllerRumble(SDL_GameController *gamecontroller,
-                             Uint16 low, Uint16 high, Uint32 ms)
-{
-	(void)gamecontroller; (void)low; (void)high; (void)ms;
-	return -1;
-}
-
 SDL_Haptic *SDL_HapticOpen(int device_index)
 {
 	(void)device_index;

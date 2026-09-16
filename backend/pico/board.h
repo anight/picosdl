@@ -159,4 +159,47 @@
 #define PSDL_BOARD_JOY_INVERT_X   false
 #define PSDL_BOARD_JOY_INVERT_Y   true
 
+/* ========================================================================
+ * Game controller - Adafruit Gamepad QT on I2C
+ * ========================================================================
+ *
+ * A seesaw device: an ATtiny817 running Adafruit's firmware, which presents the
+ * two stick axes as ADC channels and the six buttons as GPIO pins. Optional - if
+ * nothing answers at the address, picosdl carries on with the analog stick alone.
+ *
+ * The pins are fixed by the RP2350's mux, which offers I2C in a strict four-pin
+ * cycle: SDA only on even pins, SCL only on odd, alternating instance every two.
+ * GP6/GP7 are I2C1, and they are the only free pair on this board that the
+ * display carrier does not also use for its touch controller or SD slot.
+ *
+ * 400 kHz and the 100 us read delay are measured, not guessed. Adafruit's
+ * CircuitPython driver waits 8 ms between writing a register pointer and reading
+ * the answer, which is a safe default for any seesaw on any bus but would cost
+ * 24 ms for the three registers a poll needs - longer than a frame. In practice
+ * this device needs no added delay at all: 200 hardware-ID reads and 100 ADC reads
+ * came back perfect with zero. The 100 us is margin, and the cost is 1.03 ms per
+ * poll against a ~21 ms frame. 1 MHz works too but is outside Fast-mode spec for a
+ * Stemma QT cable's pull-ups and saves only 0.24 ms.
+ */
+#define PSDL_BOARD_GAMEPAD_ENABLE      1
+#define PSDL_BOARD_GAMEPAD_I2C         i2c1   /* GP6/GP7 are I2C1, not I2C0 */
+#define PSDL_BOARD_GAMEPAD_SDA_PIN     6
+#define PSDL_BOARD_GAMEPAD_SCL_PIN     7
+#define PSDL_BOARD_GAMEPAD_BAUD        400000
+#define PSDL_BOARD_GAMEPAD_ADDR        0x50   /* seesaw default; jumpers give 51-53 */
+#define PSDL_BOARD_GAMEPAD_READ_DELAY_US 100
+
+/*
+ * Stick orientation, as wired and oriented in this build. X reads backwards -
+ * pushing left gives a rising ADC count - so it is inverted here.
+ *
+ * This is the same kind of fact as PSDL_BOARD_JOY_INVERT_* above and lives in the
+ * same place: which way a stick is physically installed. It is deliberately NOT
+ * where button assignments live. Those are a game's control bindings, not a
+ * property of the board, and picosdl reports the pad's real buttons so that a
+ * client asking for "button A" gets the one labelled A.
+ */
+#define PSDL_BOARD_GAMEPAD_INVERT_X  true
+#define PSDL_BOARD_GAMEPAD_INVERT_Y  false
+
 #endif /* PSDL_BOARD_H */

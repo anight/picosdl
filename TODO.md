@@ -93,15 +93,31 @@ cause. Reach for it before reaching for a bigger number.
 `PSDL_MAX_SURFACES` fails more kindly: too small is a panic at start-up, which is
 at least loud and immediate.
 
-## Game controller and haptics are inert stubs
+## The controller path has no host coverage
 
-`SDL_IsGameController()` returns false and every `SDL_GameController*` and
-`SDL_Haptic*` entry point does nothing. They exist so that a game written
-against SDL2 compiles and links unmodified, and an analog stick reaches it
-through the joystick calls instead.
+`SDL_GameController` is real now - `psdl_gamecontroller.c`, fed by whichever
+backend has a pad - but nothing exercises it except a board and a thumb. The host
+backend never calls the three feeders, so `SDL_IsGameController()` is false there
+and every controller branch is unreachable in the one build that has tests.
 
-Mapping the stick onto the controller API would let a game use either, at the
-cost of a mapping table the library currently does without.
+That is not a theoretical gap. Bringing up the first pad produced six bugs and
+every one of them was found by pressing a button on hardware: a presence probe that
+used a read where the device wanted a write, an axis wired backwards, button
+bindings in the wrong places, a restart guard that also fired at the title screen,
+and a pause that could not be undone because the only key the pad could send was
+the one that re-paused.
+
+What is wanted is scripted pad input in the host harness, beside the `PICOPOP_KEYS`
+it already has - `PICOPOP_PAD=start@1500,x@1600` - so that "after a death, Start
+restarts the level" can be asserted before flashing. The feeders exist and take
+plain values, so this is a change to one file.
+
+## Haptics are inert stubs
+
+Every `SDL_Haptic*` entry point does nothing. They exist so a game written against
+SDL2 links unmodified. There is nothing on this hardware to shake, and
+`SDL_GameControllerRumble()` returns -1 for the same reason - which is what SDL
+itself returns when a device cannot do it.
 
 ## One backend, one board
 
