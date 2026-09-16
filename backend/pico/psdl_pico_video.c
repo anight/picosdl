@@ -59,7 +59,30 @@ static Uint8        s_band_pixels[PSDL_PICO_PANEL_W * BAND_H];
 static SDL_Surface *s_band;
 
 static int   s_bands_on;
-static Uint8 s_band_fg = 15, s_band_bg = 0;
+
+/*
+ * The bands' own colours, and the two CLUT slots they borrow to get them onto the
+ * panel.
+ *
+ * The band buffer is 8bpp like everything else, so its pixels have to be palette
+ * indices - but the colours must not be the *client's* palette entries. The CLUT
+ * is expanded at push time, so a band pushed while the game has rewritten an
+ * entry comes out in the game's colour: Prince of Persia implements its damage
+ * flash by writing index 0 red, and a band repaint landing inside one painted the
+ * letterbox red until the next repaint a second later. Fades did the same thing
+ * more quietly.
+ *
+ * So the two indices are overridden to the band's colours immediately before the
+ * push and restored from the palette afterwards. Nothing else can be reading the
+ * CLUT at that point: present() has already waited for the previous transfer, and
+ * each band push waits for its own. Which two indices they are does not matter,
+ * since they are put back.
+ */
+#define BAND_IDX_BG 0
+#define BAND_IDX_FG 1
+
+static SDL_Color s_band_fg = { 255, 255, 255, SDL_ALPHA_OPAQUE };
+static SDL_Color s_band_bg = {   0,   0,   0, SDL_ALPHA_OPAQUE };
 static char  s_footer[48];
 
 /* Figures for the header. Frames are counted here; the two idle counters are
@@ -73,11 +96,13 @@ extern volatile uint32_t psdl_pico_core1_busy_us;   /* psdl_pico_audio.c */
 #endif
 extern volatile uint32_t psdl_pico_core0_idle_us;   /* psdl_pico_time.c  */
 
-void PSDL_StatusBands(SDL_bool on, Uint8 fg, Uint8 bg)
+void PSDL_StatusBands(SDL_bool on, SDL_Color fg, SDL_Color bg)
 {
 	s_bands_on = on ? 1 : 0;
 	s_band_fg  = fg;
 	s_band_bg  = bg;
+	s_band_fg.a = SDL_ALPHA_OPAQUE;
+	s_band_bg.a = SDL_ALPHA_OPAQUE;
 }
 
 void PSDL_SetFooterText(const char *text)
@@ -87,19 +112,42 @@ void PSDL_SetFooterText(const char *text)
 	snprintf(s_footer, sizeof(s_footer), "%s", text);
 }
 
+static void clut_write(int index, SDL_Color c)
+{
+	struct ClutEntry e = { .r = c.r, .g = c.g, .b = c.b };
+	dispSetClut(index, 1, &e);
+}
+
+/* Lend the band its two colours. Nothing is reading the CLUT here - see the note
+ * on BAND_IDX_BG. */
+static void band_clut_override(void)
+{
+	clut_write(BAND_IDX_BG, s_band_bg);
+	clut_write(BAND_IDX_FG, s_band_fg);
+}
+
+/* And give them back, from the palette rather than from the hardware: picosdl's
+ * SDL_Palette is the authority on what the client last set. */
+static void band_clut_restore(void)
+{
+	const SDL_Color *pal = PSDL_GlobalPalette()->colors;
+	clut_write(BAND_IDX_BG, pal[BAND_IDX_BG]);
+	clut_write(BAND_IDX_FG, pal[BAND_IDX_FG]);
+}
+
 /* Render one band into the shared buffer and push it, waiting for it to land. */
 static void band_push(int y, const char *text)
 {
 	if (s_band == NULL)
 		return;
 
-	memset(s_band_pixels, s_band_bg, sizeof(s_band_pixels));
+	memset(s_band_pixels, BAND_IDX_BG, sizeof(s_band_pixels));
 
 	int w = PSDL_Font5x7Width(text);
 	int x = (PSDL_PICO_PANEL_W - w) / 2;
 	if (x < 0)
 		x = 0;
-	PSDL_Font5x7Draw(s_band, x, (BAND_H - PSDL_FONT5X7_HEIGHT) / 2, s_band_fg, text);
+	PSDL_Font5x7Draw(s_band, x, (BAND_H - PSDL_FONT5X7_HEIGHT) / 2, BAND_IDX_FG, text);
 
 	struct Rect r = { 0, (int16_t)y, PSDL_PICO_PANEL_W, BAND_H };
 	struct dmaTransfer *t = dispDrawBuffer(s_band_pixels,
@@ -158,8 +206,10 @@ static void bands_tick(void)
 	snprintf(s_header, sizeof(s_header), "%u FPS   CORE0 %u%%", fps, c0);
 #endif
 
+	band_clut_override();
 	band_push(0, s_header);
 	band_push(PSDL_PICO_PANEL_H - BAND_H, s_footer);
+	band_clut_restore();
 }
 
 /*

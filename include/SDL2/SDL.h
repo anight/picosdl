@@ -628,18 +628,22 @@ void     PSDL_ReportMemory(void);
  * The letterbox status bands.
  *
  * When the panel is taller than the canvas, the strips above and below it are
- * otherwise unused. PSDL_StatusBands turns them on, in palette indices `fg` and
- * `bg` - indices, because only the client knows what its palette means.
+ * otherwise unused. PSDL_StatusBands turns them on.
  *
- * The header is picosdl's own: frame rate and the load on both cores, which are
- * numbers only the library is in a position to measure. The footer is whatever
- * PSDL_SetFooterText was given, centred. Both are repainted once a second, which is
- * also what keeps them legible - a band's pixels are expanded through the CLUT when
- * pushed, so they do not follow later palette changes the way the canvas does.
+ * The colours are RGB rather than palette indices, and that is the whole point:
+ * the bands are picosdl's overlay, not part of the client's indexed world, and
+ * they keep the colours asked for whatever the client does to its palette. An
+ * earlier version took indices and the letterbox turned red whenever Prince of
+ * Persia flashed the screen - that game's damage flash is a write to palette
+ * entry 0, and the band was using entry 0 for its background.
+ *
+ * The header is picosdl's own: frame rate and the load on both cores, numbers only
+ * the library is in a position to measure. The footer is whatever
+ * PSDL_SetFooterText was given, centred. Both are repainted once a second.
  *
  * No effect on a backend whose panel is exactly the canvas size.
  */
-void     PSDL_StatusBands(SDL_bool on, Uint8 fg, Uint8 bg);
+void     PSDL_StatusBands(SDL_bool on, SDL_Color fg, SDL_Color bg);
 void     PSDL_SetFooterText(const char *text);
 void     PSDL_DumpArena(void);
 /* Events lost to a full queue. Should stay at zero; anything else means the
