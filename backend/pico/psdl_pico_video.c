@@ -68,7 +68,9 @@ static unsigned s_frames;
 static Uint32   s_stats_ms;
 static char     s_header[48];
 
+#if PSDL_HAVE_AUDIO
 extern volatile uint32_t psdl_pico_core1_busy_us;   /* psdl_pico_audio.c */
+#endif
 extern volatile uint32_t psdl_pico_core0_idle_us;   /* psdl_pico_time.c  */
 
 void PSDL_StatusBands(SDL_bool on, Uint8 fg, Uint8 bg)
@@ -135,18 +137,26 @@ static void bands_tick(void)
 	uint64_t elapsed_us = (uint64_t)elapsed_ms * 1000u;
 
 	unsigned fps  = elapsed_ms ? s_frames * 1000u / elapsed_ms : 0;
-	unsigned c1   = elapsed_us ? (unsigned)((uint64_t)psdl_pico_core1_busy_us * 100u / elapsed_us) : 0;
 	unsigned idle = elapsed_us ? (unsigned)((uint64_t)psdl_pico_core0_idle_us * 100u / elapsed_us) : 0;
 	if (idle > 100) idle = 100;
 	unsigned c0   = 100u - idle;
-	if (c1 > 100) c1 = 100;
 
 	s_stats_ms   = now;
 	s_frames     = 0;
 	psdl_pico_core0_idle_us = 0;
+
+	/* Core 1 is the mixer and nothing else, so with the audio off it is never
+	 * launched and there is no second figure to report. Leave it out rather
+	 * than print a permanent zero that looks like a measurement. */
+#if PSDL_HAVE_AUDIO
+	unsigned c1 = elapsed_us ? (unsigned)((uint64_t)psdl_pico_core1_busy_us * 100u / elapsed_us) : 0;
+	if (c1 > 100) c1 = 100;
 	psdl_pico_core1_busy_us = 0;
 
 	snprintf(s_header, sizeof(s_header), "%u FPS   CORE0 %u%%   CORE1 %u%%", fps, c0, c1);
+#else
+	snprintf(s_header, sizeof(s_header), "%u FPS   CORE0 %u%%", fps, c0);
+#endif
 
 	band_push(0, s_header);
 	band_push(PSDL_PICO_PANEL_H - BAND_H, s_footer);
