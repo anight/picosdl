@@ -3,8 +3,8 @@
  * something kbd_decode.h understands, and for building the Output report that
  * drives the lock LEDs. Shared by the Classic and LE transports.
  */
-#ifndef PICO_TEST_BT_KEYBOARD_HID_REPORT_H
-#define PICO_TEST_BT_KEYBOARD_HID_REPORT_H
+#ifndef PICO_BT_KEYBOARD_HID_REPORT_H
+#define PICO_BT_KEYBOARD_HID_REPORT_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -58,4 +58,4 @@ void hid_led_layout_find(hid_led_layout_t *layout,
 uint8_t hid_led_build_report(const hid_led_layout_t *layout, uint8_t led_mask,
                              uint8_t *out, uint8_t out_size);
 
-#endif // PICO_TEST_BT_KEYBOARD_HID_REPORT_H
+#endif // PICO_BT_KEYBOARD_HID_REPORT_H

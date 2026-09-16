@@ -5,8 +5,8 @@
  * HID-over-GATT device, and you cannot tell which from the outside. bt_app.c
  * searches both, alternating, and hands the winner to the matching transport.
  */
-#ifndef PICO_TEST_BT_KEYBOARD_BT_APP_H
-#define PICO_TEST_BT_KEYBOARD_BT_APP_H
+#ifndef PICO_BT_KEYBOARD_BT_APP_H
+#define PICO_BT_KEYBOARD_BT_APP_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -76,4 +76,4 @@ void bt_app_forget_pairing(void);
 void bt_app_search_again(void);
 void bt_app_print_status(void);
 
-#endif // PICO_TEST_BT_KEYBOARD_BT_APP_H
+#endif // PICO_BT_KEYBOARD_BT_APP_H

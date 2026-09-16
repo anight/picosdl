@@ -7,8 +7,8 @@
  * key usages currently held down. Everything downstream of that -- edge
  * detection, shift/caps handling, US layout mapping -- lives here once.
  */
-#ifndef PICO_TEST_BT_KEYBOARD_KBD_DECODE_H
-#define PICO_TEST_BT_KEYBOARD_KBD_DECODE_H
+#ifndef PICO_BT_KEYBOARD_KBD_DECODE_H
+#define PICO_BT_KEYBOARD_KBD_DECODE_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -84,4 +84,4 @@ uint8_t kbd_decode_led_mask(void);
 // [modifiers, reserved, usage x6] straight into kbd_decode_report.
 void kbd_decode_boot_report(const uint8_t *data, uint16_t len);
 
-#endif // PICO_TEST_BT_KEYBOARD_KBD_DECODE_H
+#endif // PICO_BT_KEYBOARD_KBD_DECODE_H

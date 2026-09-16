@@ -120,9 +120,9 @@ static void console_command(char cmd)
 		bt_app_search_again();
 		break;
 	case 'd':
-		pico_test_bt_keyboard_verbose = !pico_test_bt_keyboard_verbose;
+		pico_bt_keyboard_verbose = !pico_bt_keyboard_verbose;
 		printf("[console] bluetooth logging %s\n",
-		       pico_test_bt_keyboard_verbose ? "on" : "off");
+		       pico_bt_keyboard_verbose ? "on" : "off");
 		break;
 #endif
 	case 'v':

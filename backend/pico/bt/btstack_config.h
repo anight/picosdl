@@ -7,8 +7,8 @@
  * CYW43 shared SPI bus from overrunning, and lowering them causes dropped ACL
  * packets rather than saving anything useful.
  */
-#ifndef PICO_TEST_BT_KEYBOARD_BTSTACK_CONFIG_H
-#define PICO_TEST_BT_KEYBOARD_BTSTACK_CONFIG_H
+#ifndef PICO_BT_KEYBOARD_BTSTACK_CONFIG_H
+#define PICO_BT_KEYBOARD_BTSTACK_CONFIG_H
 
 // ---------------------------------------------------------------- features --
 
@@ -90,4 +90,4 @@
 #define ENABLE_SOFTWARE_AES128
 #define ENABLE_MICRO_ECC_FOR_LE_SECURE_CONNECTIONS
 
-#endif // PICO_TEST_BT_KEYBOARD_BTSTACK_CONFIG_H
+#endif // PICO_BT_KEYBOARD_BTSTACK_CONFIG_H

@@ -6,10 +6,10 @@
 
 // Off by default: normal use is a keyboard that works, and what you want to see
 // then is the text you typed. Press 'd' when a keyboard misbehaves.
-bool pico_test_bt_keyboard_verbose = false;
+bool pico_bt_keyboard_verbose = false;
 
 void dbg(const char *fmt, ...) {
-    if (!pico_test_bt_keyboard_verbose) return;
+    if (!pico_bt_keyboard_verbose) return;
 
     /* Formatted here and handed over as one string: psdl_log takes varargs, not a
      * va_list, and the whole point is that the line arrives whole. */
@@ -24,7 +24,7 @@ void dbg(const char *fmt, ...) {
 #define DBG_BYTES_MAX 12
 
 void dbg_bytes(const char *label, const uint8_t *data, uint16_t len) {
-    if (!pico_test_bt_keyboard_verbose) return;
+    if (!pico_bt_keyboard_verbose) return;
 
     psdl_log("%s len=%u", label, len);
     if (data == NULL) {
