@@ -175,6 +175,7 @@ add_library(picosdl STATIC
     backend/pico/psdl_pico_video.c
     backend/pico/psdl_pico_input.c
     backend/pico/psdl_pico_time.c
+    backend/pico/psdl_pico_cpu.c
     backend/pico/psdl_pico_log.c
 
     ${LCD_DRIVER_DIR}/dispPioSt7789.c
@@ -288,7 +289,7 @@ set_source_files_properties(
     src/psdl_font.c
     backend/pico/psdl_pico_video.c backend/pico/psdl_pico_audio.c
     backend/pico/psdl_pico_input.c backend/pico/psdl_pico_time.c
-    backend/pico/psdl_pico_log.c
+    backend/pico/psdl_pico_cpu.c backend/pico/psdl_pico_log.c
     # Listed whether or not the options above included them: a property on a file
     # that is not in the target is ignored, which is simpler than two lists.
     backend/pico/joystick.c backend/pico/seesaw_gamepad.c

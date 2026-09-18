@@ -58,10 +58,6 @@ static int           s_open_rate;
  */
 static spin_lock_t *s_audio_lock;
 static uint32_t     s_audio_lock_state;
-/* Busy microseconds on core 1 since the last read. Written here only, read and
- * cleared by the video backend for the status band. */
-volatile uint32_t psdl_pico_core1_busy_us;
-
 static volatile int s_audio_lock_owner = -1;
 static volatile int s_audio_lock_depth;
 
@@ -123,15 +119,7 @@ static void __not_in_flash_func(fill_block)(int32_t *out)
 		return;
 	}
 
-	/*
-	 * Core 1's load, measured where it is spent. Nothing else runs on this core, so
-	 * time inside the client's mixing callback over an interval *is* its load. The
-	 * video backend reads and clears this once a second for the status band.
-	 */
-	absolute_time_t mix_t0 = get_absolute_time();
 	psdl_audio_render(s_mix_buffer, PSDL_AUDIO_BLOCK_FRAMES);
-	psdl_pico_core1_busy_us +=
-		(uint32_t)absolute_time_diff_us(mix_t0, get_absolute_time());
 
 	int volume = s_volume;   /* read once; core 0 can change it mid-block */
 
@@ -149,11 +137,20 @@ static void __not_in_flash_func(fill_block)(int32_t *out)
 	}
 }
 
+/*
+ * Everything core 1 does when it owns the mixer happens in here, so the interrupt
+ * boundary is exactly the boundary between working and waiting: busy on the way
+ * in, idle again on the way out, against the standing idle the main loop opened.
+ */
 static void __not_in_flash_func(i2s_dma_handler)(void)
 {
+	PSDL_CpuBusy();
+
 	int32_t *buffer = PioI2S_nextOutputBuffer(&s_i2s);
 	fill_block(buffer);
 	PioI2S_endDMAInterruptHandler(&s_i2s);
+
+	PSDL_CpuIdle();
 }
 
 static void core1_audio_main(void)
@@ -169,7 +166,9 @@ static void core1_audio_main(void)
 	s_core1_up = true;
 
 	/* All the work happens in the DMA interrupt, which is now bound to this
-	 * core. Nothing else runs here. */
+	 * core. Nothing else runs here, so the core is idle from now until an
+	 * interrupt says otherwise. */
+	PSDL_CpuIdle();
 	for (;;)
 		tight_loop_contents();
 }

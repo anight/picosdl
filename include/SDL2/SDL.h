@@ -743,6 +743,45 @@ SDL_bool PSDL_BufferBusy(const void *pixels);
 void     PSDL_ReportMemory(void);
 
 /*
+ * How busy each core is, for the status band.
+ *
+ * Bracket every wait:
+ *
+ *     PSDL_CpuIdle();
+ *     ... block on something ...
+ *     PSDL_CpuBusy();
+ *
+ * Load is the complement of what those brackets enclose. picosdl has no way to
+ * see what a core is doing, but it can be told when a core has stopped doing it,
+ * and everything outside the brackets is counted as work.
+ *
+ * Marking the waits rather than the work is the point. There are a handful of
+ * places where a core blocks and a great many where it computes, so this is a
+ * few lines rather than a wrapper around every path - and forgetting one
+ * overstates the load, which is obvious, instead of silently reporting a core
+ * that does nothing at all.
+ *
+ * Which core the call is about is the core it is made from; there is no core
+ * argument, because the only thing being described is "is this core running",
+ * and only that core knows. A second core is reported on the band as soon as it
+ * makes its first call and not before, so a build that leaves it parked shows one
+ * figure rather than a second one pinned at zero.
+ *
+ * The brackets nest, so wrapping a region that internally blocks somewhere
+ * picosdl already brackets is counted once.
+ *
+ * A client that calls neither is still measured on the core that presents:
+ * picosdl brackets the panel wait and SDL_Delay() itself, which is where a
+ * single-threaded client spends its spare frame. Marking a worker core is the
+ * client's job, since picosdl does not know it exists.
+ *
+ * Both are cheap - a counter and a timer read - but they are not free, so bracket
+ * the frame's waits, not the inner loop's.
+ */
+void     PSDL_CpuIdle(void);
+void     PSDL_CpuBusy(void);
+
+/*
  * The letterbox status bands.
  *
  * When the panel is taller than the canvas, the strips above and below it are
@@ -755,8 +794,8 @@ void     PSDL_ReportMemory(void);
  * Persia flashed the screen - that game's damage flash is a write to palette
  * entry 0, and the band was using entry 0 for its background.
  *
- * The header is picosdl's own: frame rate and the load on both cores, numbers only
- * the library is in a position to measure. The footer is whatever
+ * The header is picosdl's own: frame rate, and the load on each core that has
+ * reported any (see PSDL_CpuIdle). The footer is whatever
  * PSDL_SetFooterText was given, centred. Both are repainted once a second.
  *
  * No effect on a backend whose panel is exactly the canvas size.

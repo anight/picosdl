@@ -146,16 +146,11 @@ static const SDL_Color s_icon_off = {  90,  90,  90, SDL_ALPHA_OPAQUE };
 #endif
 static char  s_footer[48];
 
-/* Figures for the header. Frames are counted here; the two idle counters are
- * elsewhere, each where the time is actually spent. */
+/* Figures for the header. Frames are counted here; the load comes from
+ * psdl_backend_cpu_load(), which each core feeds where the time is spent. */
 static unsigned s_frames;
 static Uint32   s_stats_ms;
 static char     s_header[48];
-
-#if PSDL_HAVE_AUDIO
-extern volatile uint32_t psdl_pico_core1_busy_us;   /* psdl_pico_audio.c */
-#endif
-extern volatile uint32_t psdl_pico_core0_idle_us;   /* psdl_pico_time.c  */
 
 void PSDL_StatusBands(SDL_bool on, SDL_Color fg, SDL_Color bg)
 {
@@ -293,15 +288,9 @@ static void band_push(int y, const char *text, int align_left, int with_icon)
 /*
  * Once a second: work out the figures, then repaint both bands.
  *
- * core 1 is the mixer and nothing else, so its busy time over the interval is its
- * load.
- *
- * core 0 is the game, and it idles in two places, both of which picosdl can see: in
- * SDL_Delay(), which is a real WFE sleep and is how a client waits out a frame -
- * SDLPoP's do_simple_wait() loops on SDL_Delay(1) - and blocked waiting for the
- * panel transfer here. Its load is the complement of the two together. Counting only
- * the panel wait, as a first version of this did, overstates the load by however long
- * the client sleeps, which for a frame-paced game is most of the difference.
+ * Both loads come from the same place and mean the same thing - see PSDL_CpuIdle()
+ * in SDL.h. Core 1 is reported only if it has ever said anything, so a build that
+ * never starts it prints one figure rather than a second one stuck at zero.
  */
 static void bands_tick(void)
 {
@@ -312,29 +301,18 @@ static void bands_tick(void)
 		return;
 
 	unsigned elapsed_ms = (unsigned)(now - s_stats_ms);
-	uint64_t elapsed_us = (uint64_t)elapsed_ms * 1000u;
+	unsigned fps        = elapsed_ms ? s_frames * 1000u / elapsed_ms : 0;
 
-	unsigned fps  = elapsed_ms ? s_frames * 1000u / elapsed_ms : 0;
-	unsigned idle = elapsed_us ? (unsigned)((uint64_t)psdl_pico_core0_idle_us * 100u / elapsed_us) : 0;
-	if (idle > 100) idle = 100;
-	unsigned c0   = 100u - idle;
+	s_stats_ms = now;
+	s_frames   = 0;
 
-	s_stats_ms   = now;
-	s_frames     = 0;
-	psdl_pico_core0_idle_us = 0;
+	int c0 = psdl_backend_cpu_load(0);
+	int c1 = psdl_backend_cpu_load(1);
 
-	/* Core 1 is the mixer and nothing else, so with the audio off it is never
-	 * launched and there is no second figure to report. Leave it out rather
-	 * than print a permanent zero that looks like a measurement. */
-#if PSDL_HAVE_AUDIO
-	unsigned c1 = elapsed_us ? (unsigned)((uint64_t)psdl_pico_core1_busy_us * 100u / elapsed_us) : 0;
-	if (c1 > 100) c1 = 100;
-	psdl_pico_core1_busy_us = 0;
-
-	snprintf(s_header, sizeof(s_header), "fps:%3u c0:%3u%% c1:%3u%%", fps, c0, c1);
-#else
-	snprintf(s_header, sizeof(s_header), "fps:%3u c0:%3u%%", fps, c0);
-#endif
+	if (c1 >= 0)
+		snprintf(s_header, sizeof(s_header), "fps:%3u c0:%3d%% c1:%3d%%", fps, c0, c1);
+	else
+		snprintf(s_header, sizeof(s_header), "fps:%3u c0:%3d%%", fps, c0);
 
 #if PSDL_COLOR_DEPTH == 8
 	band_clut_override();
@@ -435,19 +413,19 @@ void psdl_backend_video_init(int w, int h)
 }
 
 /*
- * Wait for the panel, counting the time as core 0 idle.
+ * Wait for the panel, marking the core idle for the duration.
  *
- * It is core 0's largest single idle and therefore the whole basis of the load
- * figure on the status band, so it is measured here rather than left to
- * dispDrawBuffer's implicit wait.
+ * It is the largest single stall a presenting core has, so every path that waits
+ * for the panel comes through here rather than leaving it to dispDrawBuffer's
+ * implicit wait, which picosdl would not see.
  */
 static void wait_for_panel(void)
 {
 	if (s_xfer == NULL)
 		return;
-	absolute_time_t t0 = get_absolute_time();
+	PSDL_CpuIdle();
 	dispDmaTransferWaitFinish(s_xfer);
-	psdl_pico_core0_idle_us += (uint32_t)absolute_time_diff_us(t0, get_absolute_time());
+	PSDL_CpuBusy();
 	s_xfer = NULL;
 	s_xfer_pixels = NULL;
 }
@@ -530,10 +508,10 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
  *
  * The same wait the next present would do, brought forward because the client is
  * about to draw into the buffer the DMA is reading. It goes through
- * wait_for_panel() rather than waiting directly so the time counts as core 0
- * idle: a client that owns one buffer spends most of its spare frame here, and
- * counting it anywhere else would report that core as fully loaded while it sat
- * spinning on the panel.
+ * wait_for_panel() rather than waiting directly so the time counts as idle: a
+ * client that owns one buffer spends most of its spare frame here, and counting
+ * it anywhere else would report that core as fully loaded while it sat spinning
+ * on the panel.
  */
 /*
  * Is the panel still reading `pixels`?
@@ -545,8 +523,8 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
  *
  * Retires the transfer as soon as the DMA reports it done, so the answer becomes
  * false on its own without anyone having to wait. The elapsed time is not counted
- * as core 0 idle: a client that polls is running its own code between polls, and
- * that is its load, not the panel's.
+ * as idle: a client that polls is running its own code between polls, and that is
+ * its load, not the panel's.
  */
 int psdl_backend_video_buffer_busy(const void *pixels)
 {

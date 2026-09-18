@@ -239,6 +239,12 @@ void psdl_backend_audio_lock(void);
 void psdl_backend_audio_unlock(void);
 
 /* Time. */
+/*
+ * Percentage of a core spent working since the last call, or -1 if that core has
+ * never reported. See PSDL_CpuIdle() in SDL.h for how it is measured.
+ */
+int psdl_backend_cpu_load(int core);
+
 Uint32 psdl_backend_ticks_ms(void);
 Uint64 psdl_backend_ticks_us(void);
 void   psdl_backend_delay_ms(Uint32 ms);
