@@ -94,6 +94,29 @@ static int   s_bands_on;
 static SDL_Color s_band_fg = { 255, 255, 255, SDL_ALPHA_OPAQUE };
 static SDL_Color s_band_bg = {   0,   0,   0, SDL_ALPHA_OPAQUE };
 
+#if PSDL_COLOR_DEPTH == 16
+/*
+ * At 16bpp the bands are drawn exactly as below - the font blitter into the 8bpp
+ * band buffer, because that is what PSDL_FontDraw() writes - and then expanded to
+ * RGB565 here on the way out.
+ *
+ * Which makes them *simpler* than at 8bpp, where the CLUT is expanded at push
+ * time and the band therefore has to borrow two palette slots and give them back
+ * (see BAND_IDX_BG). Nothing is shared at this depth: the colours asked for are
+ * written into the pixels, and no client palette exists to collide with.
+ *
+ * 12.8 KB of staging, static for the same reason the 8bpp band buffer is - a
+ * long-lived allocation at the bottom of a LIFO arena is what exhausted it once
+ * already.
+ */
+static Uint16 s_band565[PSDL_PICO_PANEL_W * BAND_H];
+
+static Uint16 color_to_565(SDL_Color c)
+{
+	return (Uint16)(((c.r * 31 / 255) << 11) | ((c.g * 63 / 255) << 5) | (c.b * 31 / 255));
+}
+#endif
+
 #if PSDL_HAVE_BT_KEYBOARD
 /*
  * The Bluetooth rune, in the top right corner: blue when a keyboard is connected,
@@ -144,6 +167,7 @@ void PSDL_SetFooterText(const char *text)
 	snprintf(s_footer, sizeof(s_footer), "%s", text);
 }
 
+#if PSDL_COLOR_DEPTH == 8
 static void clut_write(int index, SDL_Color c)
 {
 	struct ClutEntry e = { .r = c.r, .g = c.g, .b = c.b };
@@ -173,6 +197,7 @@ static void band_clut_restore(void)
 	clut_write(BAND_IDX_ICON, pal[BAND_IDX_ICON]);
 #endif
 }
+#endif /* PSDL_COLOR_DEPTH == 8 */
 
 /* Render one band into the shared buffer and push it, waiting for it to land. */
 #if PSDL_HAVE_BT_KEYBOARD
@@ -228,9 +253,29 @@ static void band_push(int y, const char *text, int align_left, int with_icon)
 #endif
 
 	struct Rect r = { 0, (int16_t)y, PSDL_PICO_PANEL_W, BAND_H };
+#if PSDL_COLOR_DEPTH == 16
+	const Uint16 fg565 = color_to_565(s_band_fg);
+	const Uint16 bg565 = color_to_565(s_band_bg);
+#if PSDL_HAVE_BT_KEYBOARD
+	const Uint16 icon565 = color_to_565(psdl_pico_bt_connected() ? s_icon_on : s_icon_off);
+#endif
+	for (unsigned i = 0; i < PSDL_PICO_PANEL_W * BAND_H; ++i) {
+		switch (s_band_pixels[i]) {
+		case BAND_IDX_FG:   s_band565[i] = fg565; break;
+#if PSDL_HAVE_BT_KEYBOARD
+		case BAND_IDX_ICON: s_band565[i] = icon565; break;
+#endif
+		default:            s_band565[i] = bg565; break;
+		}
+	}
+	struct dmaTransfer *t = dispDrawBuffer16(s_band565,
+	                                         PSDL_PICO_PANEL_W * BAND_H, &r,
+	                                         PSDL_PICO_PANEL_W);
+#else
 	struct dmaTransfer *t = dispDrawBuffer(s_band_pixels,
 	                                       PSDL_PICO_PANEL_W * BAND_H, &r,
 	                                       PSDL_PICO_PANEL_W);
+#endif
 	/* Wait, because the buffer is shared between the two bands and reused next
 	 * second. One band is 6400 pixels, about 1.6 ms. */
 	if (t != NULL)
@@ -284,10 +329,14 @@ static void bands_tick(void)
 	snprintf(s_header, sizeof(s_header), "fps:%3u c0:%3u%%", fps, c0);
 #endif
 
+#if PSDL_COLOR_DEPTH == 8
 	band_clut_override();
+#endif
 	band_push(0, s_header, 1, 1);
 	band_push(PSDL_PICO_PANEL_H - BAND_H, s_footer, 0, 0);
+#if PSDL_COLOR_DEPTH == 8
 	band_clut_restore();
+#endif
 }
 
 /*
@@ -352,7 +401,7 @@ void psdl_backend_video_init(int w, int h)
 		.reset = PSDL_BOARD_LCD_RESET_PIN,
 	};
 
-	if (!dispInit(&lcd_pins))
+	if (!dispInit(&lcd_pins, PSDL_COLOR_DEPTH))
 		psdl_panic("picosdl: dispInit() rejected the pinout in board.h - "
 		           "every pin must be 0..31 and SCK must be CS + 1");
 
@@ -438,6 +487,43 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 	wait_for_panel();   /* see psdl_backend_video_present_rect */
 #endif
 }
+
+#if PSDL_COLOR_DEPTH == 16
+/*
+ * Push a client-owned RGB565 frame.
+ *
+ * The same shape as the 8bpp present above - wait for the previous transfer,
+ * start this one, return - and the same letterboxing, since the panel is 320x240
+ * and the canvas is shorter whatever the depth. What it does not do is touch a
+ * pixel: at this depth the buffer already holds what the panel wants, so the
+ * whole frame is one DMA descriptor and the CPU is free the moment it is armed.
+ *
+ * `pitch` is in pixels; dispDrawBuffer16() takes it in the same unit.
+ */
+void psdl_backend_video_present_rgb565(const Uint16 *pixels, int w, int h, int pitch)
+{
+	if (!s_ready)
+		return;
+
+	wait_for_panel();
+	++s_frames;
+
+	/* Bands before the canvas, for the ordering reason in the 8bpp present. */
+	if (s_bands_on)
+		bands_tick();
+
+	/* Centred from the height passed in rather than from s_offset_y. At this
+	 * depth the client owns its framebuffer and picks its own size, which need
+	 * not be the PSDL_SCREEN_H the backend was initialised with. */
+	int offset_y = (PSDL_PICO_PANEL_H - h) / 2;
+	if (offset_y < 0)
+		offset_y = 0;
+
+	struct Rect r = { 0, (int16_t)offset_y, (uint16_t)w, (uint16_t)h };
+	s_xfer = dispDrawBuffer16((void *)(uintptr_t)pixels, (uint32_t)(w * h), &r,
+	                          (uint16_t)pitch);
+}
+#endif
 
 void psdl_backend_video_sync(void)
 {

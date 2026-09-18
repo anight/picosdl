@@ -54,10 +54,16 @@ static int           s_arena_depth;
  * the game draws into) and at 320x200 they are 62.5 KB each - putting them in
  * the arena would mean sizing the arena for them and wasting it the rest of the
  * time. They also outlive everything, so they never want reclaiming.
+ *
+ * Not compiled in at PSDL_COLOR_DEPTH 16: there is no 8bpp canvas then, the
+ * client presents its own RGB565 buffer, and this would be 128 KB of memory
+ * nothing can ask for.
  */
 #define PSDL_SCREEN_BYTES ((size_t)PSDL_SCREEN_W * (size_t)PSDL_SCREEN_H)
+#if PSDL_COLOR_DEPTH == 8
 static Uint8 s_screen_pool[PSDL_SCREEN_BUFFERS][PSDL_SCREEN_BYTES] __attribute__((aligned(4)));
 static Uint8 s_screen_pool_used[PSDL_SCREEN_BUFFERS];
+#endif
 
 void psdl_surface_init(void)
 {
@@ -69,7 +75,9 @@ void psdl_surface_init(void)
 	s_headers_in_use = 0;
 	s_arena_top = 0;
 	s_arena_depth = 0;
+#if PSDL_COLOR_DEPTH == 8
 	memset(s_screen_pool_used, 0, sizeof(s_screen_pool_used));
+#endif
 
 	psdl_pixel_format.palette = PSDL_GlobalPalette();
 }
@@ -145,6 +153,7 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
 	}
 
 	/* A request for exactly the screen size comes from the dedicated pool. */
+#if PSDL_COLOR_DEPTH == 8
 	if (width == PSDL_SCREEN_W && height == PSDL_SCREEN_H) {
 		for (int i = 0; i < PSDL_SCREEN_BUFFERS; ++i) {
 			if (s_screen_pool_used[i])
@@ -160,6 +169,7 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
 		SDL_SetError("picosdl: out of screen buffers - raise PSDL_SCREEN_BUFFERS");
 		return NULL;
 	}
+#endif
 
 	/* Everything is 8bpp; pitch is rounded up so rows stay word-aligned. */
 	int    pitch = (width + 3) & ~3;
@@ -221,9 +231,12 @@ void SDL_FreeSurface(SDL_Surface *surface)
 	if (--surface->refcount > 0)
 		return;
 
+#if PSDL_COLOR_DEPTH == 8
 	if (surface->pool_slot > 0) {
 		s_screen_pool_used[surface->pool_slot - 1] = 0;
-	} else if ((surface->flags & PSDL_SURF_REGION) == PSDL_SURF_ARENA) {
+	} else
+#endif
+	if ((surface->flags & PSDL_SURF_REGION) == PSDL_SURF_ARENA) {
 		/* Mark dead, then unwind as far as the stack allows. In the normal
 		 * LIFO case this reclaims immediately. */
 		for (int i = s_arena_depth - 1; i >= 0; --i) {
@@ -406,8 +419,10 @@ void PSDL_DumpArena(void)
 void PSDL_ReportMemory(void)
 {
 	int screens = 0;
+#if PSDL_COLOR_DEPTH == 8
 	for (int i = 0; i < PSDL_SCREEN_BUFFERS; ++i)
 		screens += s_screen_pool_used[i];
+#endif
 
 	printf("picosdl: surfaces %d/%d (peak %d), arena %u/%u bytes (peak %u, depth %d), "
 	       "screen buffers %d/%d\n",

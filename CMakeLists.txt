@@ -118,6 +118,28 @@ option(PICOSDL_AUDIO "I2S audio output (MAX98357A)" ON)
 # own memory, which costs the overlap between drawing and pushing - present has
 # to block until the push finishes, because the client is about to draw into the
 # buffer the DMA is reading. A client that wants 1 has to be written for it.
+#
+# Colour depth, and the one option that changes the shape of the API.
+#
+# 8 is picosdl as documented: indexed pixels, one global palette, the CLUT
+# expanded by the PIO. Every blitter and surface in the library works in it.
+#
+# 16 is for a client that produces RGB565 itself - a 3D software rasteriser
+# typically does, because it is what the panel wants. The indexed layer is then
+# dropped rather than bridged: no window surface, no palette, no blitters, and no
+# screen pool compiled in (128 KB back). The client presents its own buffer with
+# PSDL_PresentRGB565() and keeps everything else picosdl does.
+#
+# A client is written for one or the other and finds out at compile time:
+# SDL_CreateWindow() fails at 16, PSDL_PresentRGB565() is absent at 8.
+#
+set(PICOSDL_COLOR_DEPTH 8 CACHE STRING "Panel colour depth: 8 (indexed) or 16 (RGB565)")
+set_property(CACHE PICOSDL_COLOR_DEPTH PROPERTY STRINGS 8 16)
+if (NOT PICOSDL_COLOR_DEPTH EQUAL 8 AND NOT PICOSDL_COLOR_DEPTH EQUAL 16)
+    message(FATAL_ERROR "PICOSDL_COLOR_DEPTH must be 8 or 16, got '${PICOSDL_COLOR_DEPTH}'")
+endif()
+message(STATUS "picosdl colour depth: ${PICOSDL_COLOR_DEPTH}bpp")
+
 set(PICOSDL_SCREEN_BUFFERS 2 CACHE STRING "Full-screen buffers in the pool (1 or 2)")
 set_property(CACHE PICOSDL_SCREEN_BUFFERS PROPERTY STRINGS 1 2)
 message(STATUS "picosdl screen buffers: ${PICOSDL_SCREEN_BUFFERS}")
@@ -186,6 +208,8 @@ if (PICOSDL_INPUT_BT_KEYBOARD)
     )
     target_compile_definitions(picosdl PUBLIC PSDL_HAVE_BT_KEYBOARD=1)
 endif()
+
+target_compile_definitions(picosdl PUBLIC PSDL_COLOR_DEPTH=${PICOSDL_COLOR_DEPTH})
 
 target_include_directories(picosdl PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/include

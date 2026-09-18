@@ -54,6 +54,17 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 	host_present_count++;
 }
 
+#if PSDL_COLOR_DEPTH == 16
+/* The 16bpp path has no host coverage yet - see TODO.md. This exists so a host
+ * build at that depth still links, and it counts presents so a test could at
+ * least assert the frame reached the backend. */
+void psdl_backend_video_present_rgb565(const Uint16 *pixels, int w, int h, int pitch)
+{
+	(void)pixels; (void)w; (void)h; (void)pitch;
+	host_present_count++;
+}
+#endif
+
 void psdl_backend_video_sync(void) { }
 
 void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors)

@@ -38,6 +38,19 @@ SDL_Window *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint
 
 	psdl_video_init();
 
+#if PSDL_COLOR_DEPTH == 16
+	/*
+	 * No canvas at 16bpp. Every surface and blitter here is 8bpp, so a window
+	 * surface would be a buffer in a format nothing in this library can draw
+	 * into - and the client at this depth has its own RGB565 framebuffer
+	 * already, which is the point. Fail where the mistake is, rather than
+	 * returning something that misbehaves later.
+	 */
+	(void)flags;
+	SDL_SetError("picosdl: no window surface at PSDL_COLOR_DEPTH 16 - "
+	             "present your own RGB565 buffer with PSDL_PresentRGB565()");
+	return NULL;
+#else
 	if (s_window.in_use)
 		return &s_window;
 
@@ -49,7 +62,34 @@ SDL_Window *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint
 	s_window.flags  = flags | SDL_WINDOW_FULLSCREEN_DESKTOP;
 	s_window.in_use = 1;
 	return &s_window;
+#endif
 }
+
+#if PSDL_COLOR_DEPTH == 16
+/*
+ * Present an RGB565 frame the client owns.
+ *
+ * This is the whole of the 16bpp output path. There is no window, no surface and
+ * no palette in it: the buffer already holds what the panel wants, so it goes
+ * straight to the backend and from there to the DMA. `pitch` is in pixels.
+ *
+ * Asynchronous, like SDL_UpdateWindowSurface: it returns once the transfer is
+ * started, and the next call waits for it. A client that wants the frame to have
+ * landed - because it is about to draw into the same buffer - calls
+ * PSDL_PresentSync() after it.
+ */
+void PSDL_PresentRGB565(const Uint16 *pixels, int w, int h, int pitch)
+{
+	if (pixels == NULL || w <= 0 || h <= 0)
+		return;
+	psdl_backend_video_present_rgb565(pixels, w, h, pitch);
+}
+
+void PSDL_PresentSync(void)
+{
+	psdl_backend_video_sync();
+}
+#endif
 
 void SDL_DestroyWindow(SDL_Window *window)
 {

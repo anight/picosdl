@@ -622,6 +622,39 @@ SDL_RWops *SDL_RWFromFile(const char *file, const char *mode);
 #define    SDL_RWwrite(ctx, ptr, size, n) (ctx)->write(ctx, ptr, size, n)
 #define    SDL_RWclose(ctx) (ctx)->close(ctx)
 
+/* ------------------------------------------------------- direct colour */
+
+/*
+ * Present an RGB565 frame, for a build made with PSDL_COLOR_DEPTH=16.
+ *
+ * picosdl is an 8bpp library: one global palette, one byte per pixel, expanded
+ * to RGB565 by the PIO on its way to the panel. That suits a 2D game whose art
+ * is already indexed, and it is why a full-screen fade here costs 256 register
+ * writes instead of touching 64000 pixels.
+ *
+ * A 3D software rasteriser is the case it does not suit. Those produce RGB565
+ * directly - it is what the panel wants and what their blending arithmetic works
+ * in - and making one fit the 8bpp path means quantising every frame to 256
+ * colours on the CPU, which costs both the picture and the time.
+ *
+ * So a build at PSDL_COLOR_DEPTH=16 drops the indexed layer entirely rather than
+ * bridging it. There is no window surface, no palette and no blitter; the client
+ * owns its framebuffer and hands it over here, and the DMA takes it to the panel
+ * without the CPU touching a pixel. Everything else picosdl does - input, events,
+ * timers, audio - is unchanged, and is the reason to still be using it.
+ *
+ * `pitch` is in PIXELS, not bytes, which is what a caller holding a uint16_t*
+ * already has. The push is asynchronous: this returns once the transfer has
+ * started, so the client's next frame overlaps it, and the following call waits.
+ * Call PSDL_PresentSync() when you need the frame to have landed - before
+ * redrawing into the same buffer, in a single-buffered client.
+ *
+ * Both are absent from an 8bpp build; SDL_CreateWindow() is absent from a 16bpp
+ * one. A client is one or the other, and finds out at compile time.
+ */
+void     PSDL_PresentRGB565(const Uint16 *pixels, int w, int h, int pitch);
+void     PSDL_PresentSync(void);
+
 /* ---------------------------------------------------------- diagnostics */
 
 /* Print surface-pool and arena occupancy, including peaks. This is how the

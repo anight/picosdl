@@ -24,6 +24,31 @@
 #endif
 
 /*
+ * How pixels reach the panel: 8 or 16.
+ *
+ * 8 is picosdl as described everywhere else - one global palette, one byte per
+ * pixel, the CLUT expanded by the PIO, and every blitter and surface in this
+ * library working in that format.
+ *
+ * 16 is for a client that produces RGB565 itself, which a 3D rasteriser
+ * typically does because it is what the panel wants. There is then nothing for a
+ * palette to do and nothing for the blitters to blit: picosdl provides no canvas
+ * at all, the client presents its own buffer through PSDL_PresentRGB565(), and
+ * the screen pool is not compiled in - it would be 128 KB of nothing. Input,
+ * timing, audio and events are unaffected and are the reason to still be here.
+ *
+ * SDL_CreateWindow() fails at 16 rather than handing back a surface in a format
+ * this library cannot draw into. That is the whole of the API difference.
+ */
+#ifndef PSDL_COLOR_DEPTH
+#define PSDL_COLOR_DEPTH 8
+#endif
+
+#if PSDL_COLOR_DEPTH != 8 && PSDL_COLOR_DEPTH != 16
+#error "PSDL_COLOR_DEPTH must be 8 or 16"
+#endif
+
+/*
  * The LIFO arena that backs peel surfaces. Peels are created and restored in
  * strict stack order, so a bump pointer is enough and fragmentation is
  * structurally impossible.
@@ -193,6 +218,17 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch);
 void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
                                      int x, int y, int w, int h);
 void psdl_backend_video_sync(void);
+
+#if PSDL_COLOR_DEPTH == 16
+/*
+ * Push one RGB565 frame the client owns. `pitch` is in PIXELS, because a caller
+ * holding a uint16_t* has that and not a byte count.
+ *
+ * Asynchronous like the 8bpp present: it waits for the previous transfer, starts
+ * this one and returns, so the client's next frame overlaps the panel push.
+ */
+void psdl_backend_video_present_rgb565(const Uint16 *pixels, int w, int h, int pitch);
+#endif
 void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors);
 
 /* Input. poll() is called from SDL_PumpEvents and should push whatever it has. */
