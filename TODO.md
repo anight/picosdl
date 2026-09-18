@@ -23,7 +23,7 @@ What is missing is small but real. The depth's whole surface is two functions an
 a rectangle push, and the parts worth asserting are the parts with arithmetic in
 them: that `pitch` is honoured in pixels rather than bytes, that a frame whose
 height is not the canvas height is still centred in the letterbox, and that
-`PSDL_PresentSync()` after `PSDL_PresentRGB565()` orders correctly against the
+`PSDL_PresentSync()` after `PSDL_PresentBuffer()` orders correctly against the
 next present. The host backend can capture an RGB565 frame as easily as it
 captures an indexed one.
 

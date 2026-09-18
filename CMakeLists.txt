@@ -140,12 +140,12 @@ option(PICOSDL_AUDIO "I2S audio output (MAX98357A)" ON)
 #
 # 16 is for a client that produces RGB565 itself - a 3D software rasteriser
 # typically does, because it is what the panel wants. The indexed layer is then
-# dropped rather than bridged: no window surface, no palette, no blitters, and no
-# screen pool compiled in (128 KB back). The client presents its own buffer with
-# PSDL_PresentRGB565() and keeps everything else picosdl does.
+# dropped rather than bridged: no palette and no blitters, and the surface the
+# window wraps is RGB565 rather than indices.
 #
-# A client is written for one or the other and finds out at compile time:
-# SDL_CreateWindow() fails at 16, PSDL_PresentRGB565() is absent at 8.
+# The API is the same at both depths. What changes is the format of the buffer
+# the client hands to PSDL_CreateWindow() or PSDL_PresentBuffer(), and whether
+# the palette calls do anything.
 #
 set(PICOSDL_COLOR_DEPTH 8 CACHE STRING "Panel colour depth: 8 (indexed) or 16 (RGB565)")
 set_property(CACHE PICOSDL_COLOR_DEPTH PROPERTY STRINGS 8 16)
