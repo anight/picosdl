@@ -2,16 +2,27 @@
 #
 # Program, reset and watch a board over SWD.
 #
-#   ./picodev.sh flash [firmware.elf]   program and reset
-#   ./picodev.sh reset                  reset the board, program nothing
-#   ./picodev.sh halt                   stop the cores and silence the audio
-#   ./picodev.sh logs                   watch the console (tail -f, in effect)
-#   ./picodev.sh flash-and-logs [fw]    program, reset, then watch the console
+# The first argument says which part is on the other end of the probe, and there
+# is no default: --rp2040 or --rp2350.
 #
-# A bare path is still accepted, so `./picodev.sh build/picopop.elf` means the same
-# as `./picodev.sh flash build/picopop.elf`. With no arguments at all it prints this
-# and does nothing: it used to flash a default image, which is too much to do on
-# an empty command line now that there are commands that do not touch the flash.
+#   ./picodev.sh CHIP flash [firmware.elf]   program and reset
+#   ./picodev.sh CHIP reset                  reset the board, program nothing
+#   ./picodev.sh CHIP halt                   stop the cores and silence the audio
+#   ./picodev.sh CHIP logs                   watch the console (tail -f, in effect)
+#   ./picodev.sh CHIP flash-and-logs [fw]    program, reset, then watch the console
+#
+# e.g. ./picodev.sh --rp2350 flash build/picopop.elf
+#
+# A bare path is still accepted, so `./picodev.sh --rp2350 build/picopop.elf` means
+# the same as `... --rp2350 flash build/picopop.elf`. With no arguments at all it
+# prints this and does nothing: it used to flash a default image, which is too much
+# to do on an empty command line now that there are commands that do not touch the
+# flash.
+#
+# Why the chip is not guessed. It could be read off the probe, but every wrong
+# answer is bad in a different way: the wrong target config fails to attach, and
+# the wrong DMA abort address is a write to whatever the other part keeps there.
+# Naming it costs one word and removes the question.
 #
 # Environment:
 #   OPENOCD           override the OpenOCD binary
@@ -25,9 +36,48 @@ DEFAULT_FIRMWARE=./build/picosdl-demo.elf
 BAUD="${PICOPOP_BAUD:-115200}"
 
 usage() {
-	sed -n '3,14p' "$0" | sed 's/^#\{1,2\} \{0,1\}//'
+	sed -n '3,20p' "$0" | sed 's/^#\{1,2\} \{0,1\}//'
 	exit "${1:-1}"
 }
+
+# --------------------------------------------------------------------- chip
+
+#
+# Three things differ between the parts, and nothing else does:
+#
+#   the OpenOCD target config
+#   the names the two cores answer to - RP2040 numbers them, RP2350 names them
+#     by architecture because it also has RISC-V cores at rv0/rv1
+#   DMA_CHAN_ABORT, which moved when RP2350 grew from 12 channels to 16
+#
+# PIO0_BASE, PIO1_BASE and the PIO CTRL offset are identical on both, which is
+# why the silence sequence below carries only one address as a variable.
+#
+case "${1:-}" in
+--rp2040)
+	TARGET_CFG=target/rp2040.cfg
+	CORE0=rp2040.core0
+	CORE1=rp2040.core1
+	DMA_CHAN_ABORT=0x50000444
+	;;
+--rp2350)
+	TARGET_CFG=target/rp2350.cfg
+	CORE0=rp2350.cm0
+	CORE1=rp2350.cm1
+	DMA_CHAN_ABORT=0x50000464
+	;;
+-h|--help|help)
+	usage 0
+	;;
+"")
+	usage 1
+	;;
+*)
+	echo "$0: first argument must be --rp2040 or --rp2350, not '$1'" >&2
+	usage 1
+	;;
+esac
+shift
 
 # ------------------------------------------------------------------ OpenOCD
 
@@ -72,47 +122,53 @@ fi
 #                       this point, so this is about leaving the DMA in a sane
 #                       state for the flash write, not about the noise.
 #
-# Doing it by register write rather than by reset is deliberate, and the target
-# config settles the question: rp2350.cfg line 141 is
+# Doing it by register write rather than by reset is deliberate, and both target
+# configs settle the question the same way - rp2040.cfg line 84 and rp2350.cfg
+# line 141 are each
 #
-#     $_TARGETNAME_CM0 cortex_m reset_config sysresetreq
+#     $_TARGETNAME... cortex_m reset_config sysresetreq
 #
 # so OpenOCD's reset goes through the core's SYSRESETREQ, not through the RUN
 # pin. That resets the processor subsystem; it is not a power-on reset of the
 # whole chip, and peripheral state is not something to rely on it clearing.
 # Writing the registers does not depend on any of that.
 #
-# Addresses are RP2350's, from the SDK's hardware/regs headers:
-#   PIO0_BASE 0x50200000, PIO1_BASE 0x50300000, PIO_CTRL_OFFSET 0x00
-#   DMA_BASE  0x50000000, DMA_CHAN_ABORT_OFFSET 0x464
+# Addresses, from the SDK's hardware/regs headers for each part:
+#   PIO0_BASE 0x50200000, PIO1_BASE 0x50300000, PIO_CTRL_OFFSET 0x00 - both
+#   DMA_BASE  0x50000000 - both
+#   DMA_CHAN_ABORT_OFFSET  0x444 on RP2040, 0x464 on RP2350
+#
+# The 0xffff written to it is right for both: DMA_CHAN_ABORT_BITS is 0xffff on
+# each, and RP2040 simply has no channels above 11 to abort.
 #
 # Wrapped in catch so a probe that cannot do this still flashes: being unable
 # to silence the board is a nuisance, not a reason to refuse to program it.
 #
-SILENCE='
+SILENCE=$(cat <<TCL
 proc picopop_silence {} {
 	# Halting is best-effort: the register writes are what matter, and they
 	# work whether or not the cores stopped cleanly. Selecting a core is
 	# likewise best-effort - the default target can address memory too, and
 	# both cores see the same bus.
-	catch { targets rp2350.cm0 }
+	catch { targets $CORE0 }
 	catch { halt }
 	mww 0x50300000 0
 	mww 0x50200000 0
-	mww 0x50000464 0xffff
+	mww $DMA_CHAN_ABORT 0xffff
 	echo "picopop: audio and display PIO stopped, DMA aborted"
 }
 if { [catch { picopop_silence } msg] } {
-	echo "picopop: could not silence the board first ($msg) - flashing anyway"
+	echo "picopop: could not silence the board first (\$msg) - flashing anyway"
 }
-'
+TCL
+)
 
 # Run OpenOCD with the silence sequence, then whatever commands follow.
 openocd_run() {
 	local extra=()
 	[ -n "$PROBE_SERIAL" ] && extra+=(-c "cmsis_dap_serial $PROBE_SERIAL")
 	"$OPENOCD" "${OPENOCD_ARGS[@]}" \
-		-f interface/cmsis-dap.cfg -f target/rp2350.cfg \
+		-f interface/cmsis-dap.cfg -f "$TARGET_CFG" \
 		"${extra[@]}" \
 		-c "adapter speed 5000" \
 		-c "init" \
@@ -218,8 +274,8 @@ cmd_reset() {
 #
 cmd_halt() {
 	openocd_run \
-		-c "catch { targets rp2350.cm0 }" -c "catch { halt }" \
-		-c "catch { targets rp2350.cm1 }" -c "catch { halt }" \
+		-c "catch { targets $CORE0 }" -c "catch { halt }" \
+		-c "catch { targets $CORE1 }" -c "catch { halt }" \
 		-c "echo {picopop: both cores halted, board left stopped}" \
 		-c "exit"
 }
