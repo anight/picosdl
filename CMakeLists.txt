@@ -60,7 +60,9 @@ endif()
 #   backend/pico/bt     the Bluetooth HID keyboard, vendored source
 #
 # Both are peers rather than vendored third parties: each is our own fork of an
-# upstream project, carried on its own branch and edited alongside this code.
+# upstream project, tracked on its main branch and edited alongside this code.
+# Neither knows anything about picosdl: they build against the Pico SDK and their
+# own headers alone, and what they need from the board arrives at init.
 # pio-st7789 is told its pin numbers at dispInit(); pio-i2s carries one change, a
 # clock-divider check that upstream makes stricter than the hardware needs. They
 # sit at the top level for the same reason picosdl and SDLPoP do in the project
