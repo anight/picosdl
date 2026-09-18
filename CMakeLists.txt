@@ -24,7 +24,9 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     # panel's SCK at sysclk/2 = 62.5 MHz, exactly the ST7789 maximum, so neither
     # end is. It keeps the I2S divider exact at 8 kHz and within 12 ppm at 22050.
     # See the clock comment in backend/pico/board.h before changing it.
-    # Override the board with -DPICO_BOARD=pico_w.
+    #
+    # All four Pico boards build: -DPICO_BOARD=pico, pico_w, pico2 or pico2_w.
+    # The two without a radio simply default the Bluetooth keyboard off.
     set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
     # Speed over size: -O3. This is the SDK's default anyway, but it is stated
@@ -45,11 +47,6 @@ if (CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     pico_sdk_init()
 else()
     set(PICOSDL_STANDALONE FALSE)
-endif()
-
-if (NOT TARGET pico_btstack_cyw43)
-    message(FATAL_ERROR
-        "No Bluetooth support for PICO_BOARD='${PICO_BOARD}'. Use pico_w or pico2_w.")
 endif()
 
 # The hardware drivers live inside picosdl, so the library is self-contained and
@@ -94,7 +91,29 @@ endif()
 # Off means *absent*, not ignored: the driver is not compiled, and in the Bluetooth
 # case neither is BTstack nor the CYW43 firmware blob it carries.
 #
-option(PICOSDL_INPUT_BT_KEYBOARD "Bluetooth HID keyboard" ON)
+# Bluetooth is the one input that depends on the board rather than on what is
+# soldered to it: it needs the CYW43 radio, which the two `_w` boards have and the
+# other two do not. So its default is what this board can actually do, which is
+# what lets all four Pico boards configure and build with no arguments.
+#
+# Asking for it explicitly on a board without a radio is still an error. A silent
+# downgrade would hand back a library with no keyboard and no indication of why,
+# and the request is unambiguous enough to answer plainly.
+#
+if (TARGET pico_btstack_cyw43)
+    set(PICOSDL_BT_DEFAULT ON)
+else()
+    set(PICOSDL_BT_DEFAULT OFF)
+endif()
+
+option(PICOSDL_INPUT_BT_KEYBOARD "Bluetooth HID keyboard (needs a CYW43 radio)" ${PICOSDL_BT_DEFAULT})
+
+if (PICOSDL_INPUT_BT_KEYBOARD AND NOT TARGET pico_btstack_cyw43)
+    message(FATAL_ERROR
+        "PICOSDL_INPUT_BT_KEYBOARD is ON but PICO_BOARD='${PICO_BOARD}' has no "
+        "CYW43 radio. Use pico_w or pico2_w, or set PICOSDL_INPUT_BT_KEYBOARD=OFF.")
+endif()
+
 option(PICOSDL_INPUT_JOYSTICK    "Analog joystick on the ADC" ON)
 option(PICOSDL_INPUT_GAMEPAD     "I2C game controller (Adafruit Gamepad QT)" ON)
 

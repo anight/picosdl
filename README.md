@@ -498,43 +498,51 @@ blitters, the surface regions and the palette are all the indexed half. The
 ## The hardware
 
 **Every pin number and the system clock are in `backend/pico/board.h`**, and
-nothing else defines either - the ST7789 driver's `pinout.h` derives its
-names from there too. Porting to a differently wired board, or changing the clock,
-is that one file. The clock comment in it lists which reachable frequencies are
+nothing else defines either. The ST7789 driver holds no pin numbers of its own -
+the backend fills in a `struct dispPinout` from `board.h` and hands it to
+`dispInit()`. Porting to a differently wired board, or changing the clock, is
+that one file. The clock comment in it lists which reachable frequencies are
 worth wanting and what each does to the panel, the frame time and the sample rate.
 
-**`pico2_w` (RP2350) at 125 MHz** is the default. Below the SDK's 150 MHz default,
-so the core is not overclocked, and SCK is sysclk/2 = 62.5 MHz, exactly the ST7789
-maximum, so the panel is not either. 128 and 138 MHz are both reachable and both
-work here, but they run the panel 2.4% and 10.4% over its rated maximum, which is
-not something a different panel has to tolerate. The clock is not arbitrary in the
-other direction either:
-it keeps the I2S divider exact at 8 kHz (122.070312) and within 12 ppm at 22050.
+### Boards
 
-**`pico_w` (RP2040) builds too** — `-DPICO_BOARD=pico_w`. Nothing in the library
-is RP2350-only: the two PIO drivers assemble for both parts, and the backend uses
-no instruction or peripheral the RP2040 lacks. The board these are developed and
-run on daily is the `pico2_w`, so treat the RP2040 as supported by construction
-rather than exercised — it builds clean and the arithmetic below works out, but
-the panel, the DAC and the radio have not all been brought up on one at once.
+All four Raspberry Pi Pico boards build, with no arguments beyond the board name:
 
-What the smaller part is short of is room, and the numbers say where. The demo
-with everything on is 522,896 bytes of flash and 211,720 of `.bss` there, against
-a 256 KB main SRAM region — so it fits, with 49 KB left for stack, heap and a
-client's own data. That is workable for an 8bpp client whose art is in flash, and
-it is not much. A 16bpp client is the harder case: its own 320x200 RGB565
-framebuffer is 128 KB, which does not fit beside a Bluetooth build on this part.
+| `PICO_BOARD` | part | Bluetooth | demo `.text` | demo `.bss` |
+|---|---|---|---|---|
+| `pico` | RP2040 | no radio, defaults off | 80,784 | 189,816 |
+| `pico_w` | RP2040 | on | 522,896 | 211,720 |
+| `pico2` | RP2350 | no radio, defaults off | 75,940 | 189,172 |
+| **`pico2_w`** | RP2350 | on | 506,804 | 211,336 | 
+
+`pico2_w` is the default and the one these are developed and run on daily. The
+other three are supported by construction rather than exercised: they build clean
+and the arithmetic works out, but the panel, the DAC and the radio have not all
+been brought up together on one. Nothing in the library is specific to either
+part - the two PIO drivers assemble for both, and the backend uses no instruction
+or peripheral the RP2040 lacks.
+
+Bluetooth is the only option that depends on which board rather than on what is
+soldered to it: it needs the CYW43 radio, so `pico` and `pico2` default it off
+and the two `_w` boards default it on. Asking for it explicitly on a board
+without a radio is an error rather than a silent downgrade.
+
+The RP2040 boards are the ones short of room, and the table says where. Against a
+256 KB main SRAM region, `pico_w` leaves 49 KB for stack, heap and a client's own
+data once the demo's `.bss` is placed — workable for an 8bpp client whose art is
+in flash, and not much. A 16bpp client is the harder case: its own 320x200 RGB565
+framebuffer is 128 KB, which does not fit beside a Bluetooth build on that part.
 Turning Bluetooth off is what makes the space — 421 KB of flash and 22 KB of RAM,
-by far the largest lever either board has.
+by far the largest lever any of the four has.
 
-Note that the CYW43 radio is currently required on both, even with the keyboard
-off: the configure step refuses a `PICO_BOARD` without Bluetooth support
-regardless of `PICOSDL_INPUT_BT_KEYBOARD`. A plain `pico` or `pico2` will not
-configure today, which is a gap rather than a decision.
+### The clock
 
-`set_sys_clock_khz()` must be called **before** `stdio_init_all()`. It re-parents
-`clk_peri` off `clk_sys`, and stdio derives the UART divisor from `clk_peri` when
-it starts — the other order leaves the console at the wrong baud rate.
+**125 MHz.** Below the RP2350 SDK's 150 MHz default, so the core is not
+overclocked, and SCK is sysclk/2 = 62.5 MHz, exactly the ST7789 datasheet
+maximum, so the panel is not either. Raising it takes the panel out of spec by
+the same proportion, and a panel that tolerates that is not obliged to. The clock
+is not arbitrary in the other direction either: it keeps the I2S divider exact at
+8 kHz (122.070312) and within 12 ppm at 22050.
 
 ### Resource map
 
@@ -619,11 +627,12 @@ dark with nothing to read.
 **The I2S divider check demanded an exact ratio.** Upstream panics unless the
 requested divider lands exactly on a multiple of 1/256. The divider's eight
 fractional bits are a rounding target, not a constraint, and requiring exactness
-rejects almost every rate the library exists to produce: at 32-bit stereo,
-11025, 22050 and 44100 Hz are all fractional at 128, 138 and 150 MHz alike, and
-only 8000 Hz happens to divide exactly. 22050 Hz at 138 MHz needs 48.894558,
-which rounds to a real rate of 22050.012 Hz — an error of 0.5 ppm, four orders
-of magnitude below anything audible, and upstream refused to boot on it. The
+rejects almost every rate the library exists to produce: at 32-bit stereo, 11025,
+22050 and 44100 Hz are all fractional at the 125 MHz this runs at, and only
+8000 Hz happens to divide exactly (122.070312). 22050 Hz needs 44.288549, which
+rounds to a real rate of 22049.744 Hz — an error of 11.6 parts per million, two
+orders of magnitude below the smallest pitch difference anyone can hear, and
+upstream refused to boot on it. The
 copy here measures what the rounding costs and compares it against a configurable
 tolerance, `PioI2S_MAX_CLOCK_ERROR_PPM`. That is the only place it diverges from
 upstream, and it is worth offering back.

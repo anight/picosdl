@@ -23,9 +23,10 @@
  * ---- Before changing this, read the rest of this comment. ----
  *
  * The first thing to know is which way round it is. The RP2350's SDK default is
- * 150 MHz, so 138 is a *down*clock: the core is not being pushed, and the QMI
+ * 150 MHz, so this is a *down*clock: the core is not being pushed, and the QMI
  * flash timing the bootrom set up for 150 MHz stays valid at anything below it.
- * The part that IS overclocked is the display, and that is the number to watch.
+ * The part that would be overclocked by raising it is the display, and that is
+ * the number to watch.
  *
  * Four things move when you change this, in rough order of how likely each is to
  * bite.
@@ -39,11 +40,10 @@
  *
  *    The ST7789 datasheet maximum is 62.5 MHz, i.e. 125 MHz of system clock, so
  *    the current value puts SCK exactly at spec with nothing overclocked at either
- *    end. Earlier defaults did not: 128 MHz ran SCK 2.4% over and 138 MHz 10.4%
- *    over, both of which worked on the panel this was developed against and
- *    neither of which a different panel is obliged to tolerate. If you raise this
- *    and see torn, speckled or shifted pixels - not a blank screen - that is what
- *    you are looking at, and this is the number to bring back down.
+ *    end. Anything above it runs the panel out of spec by the same proportion, and
+ *    a panel that tolerates that is not obliged to. If you raise this and see
+ *    torn, speckled or shifted pixels - not a blank screen - that is what you are
+ *    looking at, and this is the number to bring back down.
  *
  * 2. HOW LONG A FRAME TAKES TO PUSH, which is what the frame rate is made of.
  *
@@ -65,10 +65,10 @@
  *    choice fails loudly rather than playing out of tune - but errors well under
  *    that are still worth avoiding, and they do not vary smoothly with the clock.
  *
- * 4. HOW MUCH ROOM CORE 1 HAS TO MIX. Linear in the clock. The game reports it as
- *    a percentage of each audio block's budget. Measured over the opening music:
- *    24-25% average and 29-37% peak at 125 MHz, against 21-22% average at
- *    138 MHz. Peak is the number with the deadline attached, not average.
+ * 4. HOW MUCH ROOM CORE 1 HAS TO MIX. Linear in the clock, and visible while a
+ *    client runs: the status band reports it as a percentage of each audio
+ *    block's budget. Peak is the number with the deadline attached, not average -
+ *    a mixer that misses a block is audible, and the average will not show it.
  *
  * ---- Choosing a value ----
  *
@@ -84,11 +84,9 @@
  *     101000   50.5 MHz  21.54ms   0.2 ppm   within spec
  *     115200   57.6 MHz  18.89ms   2.0 ppm   within spec
  *     125000   62.5 MHz  17.41ms  11.6 ppm   exactly at spec  <-- current
- *     128000   64.0 MHz  17.00ms   2.0 ppm   2.4% over
  *     130800   65.4 MHz  16.64ms   4.6 ppm   4.6% over
  *     135000   67.5 MHz  16.12ms   8.3 ppm   8.0% over
  *     136500   68.2 MHz  15.94ms   3.8 ppm   9.1% over
- *     138000   69.0 MHz  15.77ms   0.5 ppm  10.4% over   (a previous default)
  *     139500   69.8 MHz  15.60ms   4.8 ppm  11.7% over
  *     145200   72.6 MHz  14.99ms   5.2 ppm  16.2% over
  *     148000   74.0 MHz  14.70ms   2.7 ppm  18.4% over, and near the 150 MHz SDK
