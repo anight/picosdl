@@ -11,6 +11,27 @@ displays it. Giving it a real window is a change to that one file.
 Until then, seeing what the library actually draws means either a board or a
 harness of your own that writes the captured frame to disk.
 
+## The 16bpp path has no host coverage
+
+`test/host_backend.c` implements `psdl_backend_video_present_rgb565()` as a
+counter and nothing else, so a host build at `PSDL_COLOR_DEPTH=16` links and the
+existing tests still run - but none of them exercises that depth, and the ones
+that exist could not: they test the blitters, the surface regions and the
+palette, which is the indexed half and is exactly what 16bpp removes.
+
+What is missing is small but real. The depth's whole surface is two functions and
+a rectangle push, and the parts worth asserting are the parts with arithmetic in
+them: that `pitch` is honoured in pixels rather than bytes, that a frame whose
+height is not the canvas height is still centred in the letterbox, and that
+`PSDL_PresentSync()` after `PSDL_PresentRGB565()` orders correctly against the
+next present. The host backend can capture an RGB565 frame as easily as it
+captures an indexed one.
+
+Below that, `dispDrawBuffer16()` has no coverage at all on either host or board
+beyond the fact that a picture appears. Its clipping and its row-scatter path
+(source stride wider than the rectangle) are the same shapes that needed tests in
+the 8bpp blitter, and for the same reason.
+
 ## `SDL_RWFromFile` always fails
 
 `psdl_rwops.c` implements memory RWops and fails cleanly on files. There is no

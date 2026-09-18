@@ -32,6 +32,12 @@ The consequence worth naming: **the palette is the display hardware.**
 register writes rather than touching 64000 pixels, and a screen flash is one
 palette entry. Effects that would be prohibitive on this CPU become free.
 
+A build has one pixel format, but there are two builds. `PSDL_COLOR_DEPTH=16`
+serves a client that produces RGB565 itself, and it earns its place by *removing*
+this layer rather than adding a second one beside it — see
+[Direct colour](#direct-colour) below. The default is 8 and everything above is
+what that means.
+
 ### Nothing allocates
 
 There is no `malloc` anywhere in the library. Surfaces come from three fixed
@@ -109,7 +115,18 @@ The panel is 320x240 and a 320x200 canvas is letterboxed into it, leaving two
 20-pixel strips that nothing otherwise writes to. `PSDL_StatusBands(SDL_TRUE, fg, bg)`
 puts them to use: the header carries picosdl's own frame rate and the load on both
 cores, and the footer carries whatever `PSDL_SetFooterText()` was given, centred.
-Colours are palette *indices*, because only the client knows what its palette means.
+
+Colours are RGB, not palette indices, and that is the point: the bands are
+picosdl's overlay rather than part of the client's indexed world, so they keep
+the colours asked for whatever the client does to its palette. An earlier version
+took indices and the letterbox turned red every time the client flashed the
+screen by rewriting entry 0.
+
+They work at both depths. At 16bpp they are *simpler*: the band is drawn 8bpp
+through the font blitter exactly as below and expanded to RGB565 on the way out,
+so the two CLUT slots the 8bpp path has to borrow and give back — the next two
+paragraphs — are not needed at all, because there is no client palette to collide
+with.
 
 Two facts about the panel shape this.
 
@@ -172,6 +189,65 @@ first. There is no window manager here, so the library stands in for it. Without
 that, every game would have to implement volume control or have those keys do
 nothing.
 
+## Direct colour
+
+Everything above describes the 8bpp build, which is picosdl's reason for
+existing. `PSDL_COLOR_DEPTH=16` is for the client the indexed design does not
+suit, and it is worth being precise about which one that is.
+
+An indexed pipeline is a good deal when the art is already indexed: the palette
+becomes free effects, the blitter has one format to handle, and the PIO expands
+to RGB565 on the way out so the CPU never touches a pixel. A software 3D
+renderer inverts every term of that. It computes shading per pixel and produces
+RGB565 directly — which is what the panel wants anyway — so reaching an indexed
+panel means quantising a whole frame to 256 colours on the CPU, every frame. That
+costs the smooth shading the renderer exists to produce, and it costs the time
+twice over: once to quantise, and again because the palette can no longer stand
+in for the effects it made free.
+
+So at 16 the indexed layer is not bridged, it is **removed**:
+
+| | 8 | 16 |
+|---|---|---|
+| `SDL_CreateWindow` | returns the canvas | fails, with an error saying why |
+| canvas | a 320x200 8bpp surface | none — the client owns its framebuffer |
+| present | `SDL_UpdateWindowSurface` | `PSDL_PresentRGB565` |
+| palette | the CLUT, written directly | not in the path |
+| blitters | all of them | none — nothing to blit into |
+| screen pool | 62.5 KB per buffer | not compiled in |
+
+Everything else is untouched and is the reason to still be here: input, events,
+timers, audio, the status bands and the serial console all behave identically.
+
+A client is written for one depth or the other and finds out at compile time —
+`SDL_CreateWindow()` is absent in effect at 16, `PSDL_PresentRGB565()` is absent
+at 8. That is deliberate. A library that quietly handed back a surface in a
+format none of its own blitters could draw into would move the failure a long way
+from its cause.
+
+The push is asynchronous, like the 8bpp one: `PSDL_PresentRGB565()` starts the
+transfer and returns, so the client's next frame overlaps it and the following
+call waits. A single-buffered client — which is the normal case here, since a
+full-screen RGB565 buffer is 128 KB — calls `PSDL_PresentSync()` before drawing
+into the buffer the DMA is still reading. `pitch` is in **pixels**, not bytes,
+because a caller holding a `uint16_t*` has that and not a byte count.
+
+```c
+static uint16_t framebuffer[320 * 200];      /* the client's own, 128 KB */
+
+for (;;) {
+    PSDL_PresentSync();                       /* last frame has landed */
+    draw_into(framebuffer);                   /* whatever produces RGB565 */
+    PSDL_PresentRGB565(framebuffer, 320, 200, 320);
+}
+```
+
+The panel runs in RGB565 at both depths — 8bpp reaches it as RGB565 too, expanded
+through the CLUT on the way — so the depth changes the PIO and DMA wiring and
+nothing about the ST7789 itself. The driver is told which at `dispInit()` and it
+is fixed for the life of the program; a client knows at start-up which kind of
+pixels it draws, and one of the two paths is dead code for it.
+
 ## Layout
 
 ```
@@ -180,7 +256,7 @@ src/                  portable - no hardware, only the backend interface
   psdl_surface.c        the three regions and the LIFO arena
   psdl_blit.c           the blitters (the only hot path)
   psdl_palette.c        the global CLUT
-  psdl_video.c          window and present
+  psdl_video.c          window and present; the RGB565 present at 16bpp
   psdl_events.c         event ring and key state
   psdl_timer.c          timers, serviced from SDL_PumpEvents
   psdl_audio.c          SDL's pull-callback model over the backend
@@ -226,6 +302,10 @@ a single gain applied after everything is mixed; `PSDL_ReportMemory()`, which
 prints the high-water marks of all three regions; and `PSDL_DumpArena()`, which
 lists the arena entry by entry and is called automatically if the arena runs out.
 
+And on a 16bpp build only, `PSDL_PresentRGB565()` and `PSDL_PresentSync()` — the
+whole of the output path at that depth, since there is no window surface to
+update. See [Direct colour](#direct-colour).
+
 ## Building
 
 As its own project:
@@ -256,7 +336,8 @@ git submodule update --init
 
 ### Choosing what to build
 
-Four CMake options, independent, all defaulting on, and **none required**:
+Four CMake options say which hardware is present. They are independent, all
+default on, and **none is required**:
 
 ```bash
 cmake -S . -B build \
@@ -331,10 +412,34 @@ One consequence worth knowing: `psdl_pico_input_status()` reports
 stdin is polled directly rather than through BTstack, so only the four
 Bluetooth-specific commands go with it.
 
+### Choosing the colour depth
+
+`PICOSDL_COLOR_DEPTH` is a different kind of option from the four above. Those
+say which hardware is attached; this one changes the shape of the API, so a
+client is built for one value or the other and cannot be indifferent to it.
+
+```bash
+cmake -S . -B build -DPICOSDL_COLOR_DEPTH=16
+```
+
+8 is the default and is everything this README describes. 16 gives up the
+indexed layer — no window surface, no palette, no blitters — in exchange for
+handing an RGB565 framebuffer straight to the DMA. [Direct
+colour](#direct-colour) covers what that is for and what it costs; the short
+version is that it suits a client which already produces RGB565 and nothing
+else.
+
+Anything other than 8 or 16 is refused at configure time rather than producing a
+build that half works.
+
 ### The demo
 
-A standalone build produces `picosdl-demo`, which is the thing to run first on a
-new board. It exercises a palette animation driven by CLUT writes alone, a
+A standalone 8bpp build produces `picosdl-demo`, which is the thing to run first
+on a new board. It is an 8bpp program — it opens a window, blits sprites and
+animates the CLUT — so it is not built by default at
+`PICOSDL_COLOR_DEPTH=16`, where `SDL_CreateWindow()` returns NULL. It still
+compiles and links there, and asking for it explicitly gets you a binary that
+prints the error and exits; there is just no reason to want one. It exercises a palette animation driven by CLUT writes alone, a
 flash-resident sprite blitted plain, mirrored and XORed, text through the keyed
 blitter and the LIFO arena, a Bluetooth keyboard, an analog stick, a four-voice
 synth in an audio callback and an original tune - and puts the frame rate, the
@@ -402,6 +507,10 @@ blit clipped on its *left* edge — which has to read a different source column
 than an unclipped one, and an off-by-one there is invisible until a sprite walks
 off the side of the screen — LIFO reclamation, screen-pool exhaustion, and
 event-ring overflow.
+
+They are 8bpp tests, because that is where the code they exercise lives: the
+blitters, the surface regions and the palette are all the indexed half. The
+16bpp path has no host coverage — see `TODO.md`.
 
 ## The hardware
 
@@ -518,21 +627,32 @@ worth offering upstream.
 
 Static RAM, measured from a linked image:
 
-| | |
-|---|---|
-| screen pool (2 × 320×200) | 128000 |
-| LIFO arena | 28672 |
-| surface headers (192) | 13056 |
-| event ring (64) | 3584 |
-| palette | 1024 |
-| audio mix buffer | 1024 |
-| **total** | **170752 (166.8 KB)** |
+| | 8bpp | 16bpp |
+|---|---|---|
+| screen pool (2 × 320×200) | 128000 | — |
+| LIFO arena | 16384 | 16384 |
+| surface headers (192) | 13056 | 13056 |
+| status band staging (8bpp) | 6400 | 6400 |
+| status band staging (RGB565) | — | 12800 |
+| event ring (64) | 3584 | 3584 |
+| palette | 1024 | 1024 |
+| audio mix buffer | 1024 | 1024 |
+| arena stack | 768 | 768 |
+| **total** | **170240 (166.2 KB)** | **55040 (53.8 KB)** |
+
+The depth changes two rows and nothing else. The screen pool is what an 8bpp
+client draws into and does not exist at 16, where the client owns its own
+framebuffer — so the 115 KB the library gives back there is not a saving, it is
+the client's to spend, and a 320×200 RGB565 buffer is 128 KB of it. The second
+band buffer is the cost of keeping the status line at a depth whose pixels the
+PIO no longer expands.
 
 All of it is tunable: `PSDL_SCREEN_BUFFERS`, `PSDL_ARENA_BYTES`,
 `PSDL_MAX_SURFACES`, `PSDL_EVENT_QUEUE_LEN` and `PSDL_AUDIO_BLOCK_FRAMES` are
 `#ifndef`-guarded in `src/psdl_internal.h`, so a client can override any of them
-from its own build. The screen pool dominates, and a client that composites
-directly into the framebuffer rather than into an offscreen buffer can halve it.
+from its own build. At 8bpp the screen pool dominates, and a client that
+composites directly into the framebuffer rather than into an offscreen buffer can
+halve it.
 
 The library contributes **zero** heap. Two SDK functions do allocate, both
 one-shot at init — `alarm_pool_create_on_timer_with_unused_hardware_alarm` and
@@ -542,7 +662,8 @@ those two alone.
 ## Status
 
 Running on a Pico 2 W with the panel, the DAC, the radio and the stick all live
-at once. Known gaps are in `TODO.md`.
+at once. The 16bpp path is running on the same board, driven by a software 3D
+renderer at 320x200. Known gaps are in `TODO.md`.
 
 ## Licence and provenance
 

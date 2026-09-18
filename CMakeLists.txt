@@ -305,7 +305,21 @@ set_source_files_properties(
 # that does want it - for bring-up - sets PICOSDL_BUILD_DEMO before
 # add_subdirectory().
 #
-option(PICOSDL_BUILD_DEMO "Build picosdl-demo" ${PICOSDL_STANDALONE})
+#
+# Not at 16bpp, though. The demo is an 8bpp program - it opens a window, blits
+# sprites and animates the CLUT, and the first of those returns NULL at the other
+# depth. It exits cleanly saying so rather than crashing, but a binary whose whole
+# documented job is to be the first thing run on a new board should not be built
+# by default in a configuration where it quits immediately. Ask for it explicitly
+# if you want to watch it do that.
+#
+if (PICOSDL_STANDALONE AND PICOSDL_COLOR_DEPTH EQUAL 16)
+    set(PICOSDL_BUILD_DEMO_DEFAULT OFF)
+else()
+    set(PICOSDL_BUILD_DEMO_DEFAULT ${PICOSDL_STANDALONE})
+endif()
+
+option(PICOSDL_BUILD_DEMO "Build picosdl-demo (8bpp only)" ${PICOSDL_BUILD_DEMO_DEFAULT})
 
 if (PICOSDL_BUILD_DEMO)
     add_executable(picosdl-demo
