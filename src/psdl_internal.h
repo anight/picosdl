@@ -219,6 +219,10 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch);
 void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
                                      int x, int y, int w, int h);
 void psdl_backend_video_sync(void);
+
+/* Non-blocking: is the panel still reading `pixels`? A backend whose present is
+ * synchronous can always answer 0. */
+int  psdl_backend_video_buffer_busy(const void *pixels);
 void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors);
 
 /* Input. poll() is called from SDL_PumpEvents and should push whatever it has. */

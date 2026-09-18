@@ -708,6 +708,34 @@ SDL_RWops *SDL_RWFromFile(const char *file, const char *mode);
 void     PSDL_PresentBuffer(const void *pixels, int w, int h, int pitch);
 void     PSDL_PresentSync(void);
 
+/*
+ * Is the panel still reading `pixels`? Non-blocking.
+ *
+ * SDL_FALSE means that buffer is yours to write. Ask about the one you are about
+ * to draw into rather than tracking what you last presented - a buffer that is
+ * not the one in flight answers SDL_FALSE immediately, so the question is always
+ * the one worth asking and the answer never depends on your bookkeeping matching
+ * the library's.
+ *
+ * Passing NULL asks about the panel rather than a buffer: SDL_TRUE while any
+ * transfer is outstanding.
+ *
+ * This is what makes a two-buffer client able to avoid blocking entirely. Filling
+ * the free buffer is always safe, but presenting it is not free - a present
+ * drains the previous transfer first - so a client that wants that time back
+ * waits here, doing its own work, rather than inside the present:
+ *
+ *     PSDL_PresentBuffer(a, w, h, pitch);
+ *     draw_into(b);                                 // safe: a is the one in flight
+ *     while (PSDL_BufferBusy(a)) do_something();    // instead of stalling below
+ *     PSDL_PresentBuffer(b, w, h, pitch);           // returns at once
+ *
+ * Compare pointers by the base address given to PSDL_PresentBuffer() or
+ * PSDL_CreateWindow(); an interior pointer is a different buffer as far as this
+ * is concerned. Call it from the core that presents.
+ */
+SDL_bool PSDL_BufferBusy(const void *pixels);
+
 /* ---------------------------------------------------------- diagnostics */
 
 /* Print surface-pool and arena occupancy, including peaks. This is how the

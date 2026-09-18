@@ -23,6 +23,12 @@
 #include "psdl_pico.h"
 
 static struct dmaTransfer *s_xfer;
+
+/* The buffer s_xfer is reading, as the client passed it. Kept so a client can ask
+ * whether one of its own framebuffers is still being read - see
+ * psdl_backend_video_buffer_busy(). Only one transfer runs at a time, so one
+ * pointer describes all of it. */
+static const Uint8 *s_xfer_pixels;
 static int s_offset_y;
 static int s_ready;
 
@@ -281,6 +287,7 @@ static void band_push(int y, const char *text, int align_left, int with_icon)
 	if (t != NULL)
 		dispDmaTransferWaitFinish(t);
 	s_xfer = NULL;          /* that wait consumed whatever was outstanding */
+	s_xfer_pixels = NULL;
 }
 
 /*
@@ -442,6 +449,7 @@ static void wait_for_panel(void)
 	dispDmaTransferWaitFinish(s_xfer);
 	psdl_pico_core0_idle_us += (uint32_t)absolute_time_diff_us(t0, get_absolute_time());
 	s_xfer = NULL;
+	s_xfer_pixels = NULL;
 }
 
 /*
@@ -497,6 +505,7 @@ void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
 	wait_for_panel();
 
 	s_xfer = push(pixels, pitch, x, y, w, h, s_offset_y);
+	s_xfer_pixels = pixels;
 }
 
 void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
@@ -513,6 +522,7 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 		bands_tick();
 
 	s_xfer = push(pixels, pitch, 0, 0, w, h, letterbox_offset(h));
+	s_xfer_pixels = pixels;
 }
 
 /*
@@ -525,6 +535,36 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
  * counting it anywhere else would report that core as fully loaded while it sat
  * spinning on the panel.
  */
+/*
+ * Is the panel still reading `pixels`?
+ *
+ * Non-blocking, and the point of it is that a client cycling two framebuffers can
+ * find out which of its own buffers is free without reasoning about what it last
+ * presented - and can spend the wait on something useful rather than blocking
+ * inside the next present.
+ *
+ * Retires the transfer as soon as the DMA reports it done, so the answer becomes
+ * false on its own without anyone having to wait. The elapsed time is not counted
+ * as core 0 idle: a client that polls is running its own code between polls, and
+ * that is its load, not the panel's.
+ */
+int psdl_backend_video_buffer_busy(const void *pixels)
+{
+	if (!s_ready || s_xfer == NULL)
+		return 0;
+
+	/* Some other buffer is in flight, so this one is free whatever it is. */
+	if (pixels != NULL && (const Uint8 *)pixels != s_xfer_pixels)
+		return 0;
+
+	if (dispDmaTransferBusy(s_xfer))
+		return 1;
+
+	s_xfer = NULL;
+	s_xfer_pixels = NULL;
+	return 0;
+}
+
 void psdl_backend_video_sync(void)
 {
 	wait_for_panel();

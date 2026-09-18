@@ -253,19 +253,44 @@ drains the previous one before arming its own. **The buffer being read is always
 the one most recently presented, and never more than one.** Everything else
 follows from that:
 
-| buffers | what to do |
-|---|---|
-| two | draw into the one you did not just present; nothing is reading it. `PSDL_PresentSync()` is never needed |
-| one | the buffer you want is the one in flight, so `PSDL_PresentSync()` first and wait out the panel |
+Rather than work that out from what you last presented, ask:
 
-So picosdl does not need to be told which buffer is which, and a client does not
-need to ask: it already knows what it last presented, and that is the only one
-that can be busy.
+```c
+SDL_bool PSDL_BufferBusy(const void *pixels);   /* non-blocking */
+void     PSDL_PresentSync(void);                /* blocking */
+```
 
-`PSDL_PresentSync()` waits for the DMA to finish *reading* your framebuffer — not
-for the pixels to reach the glass, since a few are still in the PIO's FIFO and
-shifter when it returns. That is the right guarantee for reusing the memory and
-the wrong one for timing anything visual.
+`PSDL_BufferBusy()` answers for the buffer you name, so a client asks about the
+one it is about to touch instead of tracking which buffer is where. A buffer that
+is not the one in flight answers `SDL_FALSE` at once. `NULL` asks about the panel
+instead of a buffer.
+
+**One buffer.** The buffer you want is the one being read, so wait:
+
+```c
+PSDL_PresentSync();
+draw_into(fb);
+PSDL_PresentBuffer(fb, w, h, pitch);
+```
+
+**Two buffers.** Filling the free one is always safe, but *presenting* it is not
+free — a present drains the previous transfer first, so it blocks there. A client
+that wants that time back waits in its own code instead:
+
+```c
+PSDL_PresentBuffer(a, w, h, pitch);
+draw_into(b);                                 /* safe: a is the one in flight */
+while (PSDL_BufferBusy(a)) do_something();    /* rather than stalling below */
+PSDL_PresentBuffer(b, w, h, pitch);           /* returns at once */
+```
+
+Without that loop the program is still correct — the present waits for you — it
+just spends the wait inside picosdl rather than on your work.
+
+`PSDL_PresentSync()` and `PSDL_BufferBusy()` both concern the DMA finishing its
+*read* of your framebuffer, not the pixels reaching the glass: a few are still in
+the PIO's FIFO and shifter when they report done. That is the right guarantee for
+reusing the memory and the wrong one for timing anything visual.
 
 Everything else is untouched and is the reason to still be here: input, events,
 timers, audio, the status bands and the serial console behave identically at both

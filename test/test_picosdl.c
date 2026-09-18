@@ -308,6 +308,18 @@ static void test_client_owned_window(void)
 	PSDL_PresentBuffer(canvas, PSDL_SCREEN_W, PSDL_SCREEN_H, PSDL_SCREEN_W);
 	CHECK(host_present_count == before + 2, "PresentBuffer should present");
 
+	/* The busy query. On the host the present is synchronous, so nothing is ever
+	 * still being read - what this pins down is the contract a client codes
+	 * against: ask about the buffer you are about to touch, and a buffer that is
+	 * not in flight answers false without the client tracking anything. */
+	static Uint8 other[64];
+	CHECK(PSDL_BufferBusy(canvas) == SDL_FALSE,
+	      "a buffer whose transfer has landed should not be busy");
+	CHECK(PSDL_BufferBusy(other) == SDL_FALSE,
+	      "a buffer that was never presented should not be busy");
+	CHECK(PSDL_BufferBusy(NULL) == SDL_FALSE,
+	      "NULL asks about the panel, which is idle here");
+
 	/* Bad geometry is refused rather than half-accepted. */
 	SDL_DestroyWindow(win);
 	CHECK(PSDL_CreateWindow(NULL, 8, 8, 8) == NULL, "NULL pixels should fail");

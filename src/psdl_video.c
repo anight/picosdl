@@ -89,6 +89,18 @@ void PSDL_PresentSync(void)
 	psdl_backend_video_sync();
 }
 
+/*
+ * Is the panel still reading this buffer?
+ *
+ * The non-blocking half of the pair. PSDL_PresentSync() waits; this asks, so a
+ * client cycling two framebuffers can find out which one is free and spend the
+ * difference on something other than blocking.
+ */
+SDL_bool PSDL_BufferBusy(const void *pixels)
+{
+	return psdl_backend_video_buffer_busy(pixels) ? SDL_TRUE : SDL_FALSE;
+}
+
 void SDL_DestroyWindow(SDL_Window *window)
 {
 	if (window == NULL || !window->in_use)

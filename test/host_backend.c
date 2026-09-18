@@ -56,6 +56,13 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 
 void psdl_backend_video_sync(void) { }
 
+/* The host present copies synchronously, so nothing is ever still being read. */
+int psdl_backend_video_buffer_busy(const void *pixels)
+{
+	(void)pixels;
+	return 0;
+}
+
 void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors)
 {
 	for (int i = 0; i < ncolors; ++i)
