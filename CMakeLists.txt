@@ -344,8 +344,16 @@ if (PICOSDL_BUILD_DEMO)
 
     # Land next to the top-level build directory either way, so the path to flash
     # is build/picosdl-demo.elf whether this is its own project or a subdirectory.
+    #
+    # ARCHIVE_OUTPUT_DIRECTORY is not a copy-paste of the line above it. The .bin,
+    # .hex and .dis are derived from $<TARGET_FILE:...> and so follow the .elf on
+    # their own, but pico_add_uf2_output() reads ARCHIVE_OUTPUT_DIRECTORY and
+    # falls back to CMAKE_CURRENT_BINARY_DIR when it is unset - which as a
+    # subdirectory put picosdl-demo.uf2 in build/picosdl/ while everything else
+    # was in build/. It was easy to conclude from that there was no .uf2 at all.
     set_target_properties(picosdl-demo PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
+        ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
     pico_enable_stdio_uart(picosdl-demo 1)
     pico_enable_stdio_usb(picosdl-demo 1)

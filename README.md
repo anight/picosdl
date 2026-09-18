@@ -486,9 +486,9 @@ cmake -S . -B build && cmake --build build
 ```
 
 That second line wants a debug probe on the board's SWD pins - a Raspberry Pi
-Debugprobe, or another Pico running the debugprobe firmware. The demo builds no
-`.uf2`, so there is no BOOTSEL-and-copy route for it; a client that produces one
-can of course be flashed that way instead.
+Debugprobe, or another Pico running the debugprobe firmware. Without one, copy
+`build/picosdl-demo.uf2` onto the board over USB with BOOTSEL held instead; you
+lose the console, which is most of what the demo has to say.
 
 It links this library and nothing else, so it is also the shortest complete example
 of using it. `T` is worth knowing about: a steady test tone replacing everything
