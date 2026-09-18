@@ -245,12 +245,27 @@ A client with its own renderer wants the second — there is nothing for a surfa
 to add to a frame it has already finished. A client that wants somewhere to draw
 wants the first. Either works at either depth.
 
-The push is asynchronous: it returns once the transfer has started, so the next
-frame overlaps it and the following present waits. A client drawing into the
-buffer it just presented calls `PSDL_PresentSync()` first. That is the client's
-call to make rather than the library's, because only the client knows how many
-buffers it is cycling — one, and you sync every frame and let the panel hold the
-visible image; two, and you never wait at all.
+The push is asynchronous: it returns once the transfer has started, so drawing the
+next frame overlaps it.
+
+One transfer runs at a time — there is one DMA chain to the panel — and a present
+drains the previous one before arming its own. **The buffer being read is always
+the one most recently presented, and never more than one.** Everything else
+follows from that:
+
+| buffers | what to do |
+|---|---|
+| two | draw into the one you did not just present; nothing is reading it. `PSDL_PresentSync()` is never needed |
+| one | the buffer you want is the one in flight, so `PSDL_PresentSync()` first and wait out the panel |
+
+So picosdl does not need to be told which buffer is which, and a client does not
+need to ask: it already knows what it last presented, and that is the only one
+that can be busy.
+
+`PSDL_PresentSync()` waits for the DMA to finish *reading* your framebuffer — not
+for the pixels to reach the glass, since a few are still in the PIO's FIFO and
+shifter when it returns. That is the right guarantee for reusing the memory and
+the wrong one for timing anything visual.
 
 Everything else is untouched and is the reason to still be here: input, events,
 timers, audio, the status bands and the serial console behave identically at both

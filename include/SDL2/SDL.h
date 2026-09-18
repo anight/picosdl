@@ -680,11 +680,30 @@ SDL_RWops *SDL_RWFromFile(const char *file, const char *mode);
  * Both work at either PSDL_COLOR_DEPTH. `pixels` must be in this build's format,
  * and `pitch` is in BYTES, as everywhere else in SDL.
  *
- * The push is asynchronous: it returns once the transfer has started, so the next
- * frame overlaps it and the following present waits for it. PSDL_PresentSync()
- * waits for the frame in flight to land, which a client drawing into the buffer
- * it just presented must call first - picosdl cannot know how many buffers you
- * are cycling, so when to wait is yours to say.
+ * The push is asynchronous: it returns once the transfer has started, so drawing
+ * the next frame overlaps it.
+ *
+ * There is one panel transfer at a time - one DMA chain drives the ST7789 - and a
+ * present drains the previous one before arming its own. So the buffer being read
+ * is always the one most recently presented, and never more than one. That is the
+ * invariant to reason from:
+ *
+ *   - Two buffers: draw into the one you did not just present. Nothing is reading
+ *     it, so there is nothing to wait for, and the next present drains the other
+ *     for you. A double-buffered client never calls PSDL_PresentSync() at all.
+ *
+ *   - One buffer: the buffer you want to draw into is the one in flight, so call
+ *     PSDL_PresentSync() first. You then wait out the panel each frame and the
+ *     panel holds the visible image, which is the trade one buffer makes.
+ *
+ * PSDL_PresentSync() waits for whatever is in flight, which by the invariant is
+ * the frame you last presented. It is the client's call to make because only the
+ * client knows which buffer it is about to touch.
+ *
+ * What it waits for exactly: the DMA finishing its read of your framebuffer, not
+ * the pixels reaching the glass. A few are still in the PIO's FIFO and shifter
+ * when it returns. That is the right guarantee for reusing the memory and the
+ * wrong one for timing anything visual.
  */
 void     PSDL_PresentBuffer(const void *pixels, int w, int h, int pitch);
 void     PSDL_PresentSync(void);
