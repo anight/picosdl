@@ -515,12 +515,19 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 	s_xfer = push(pixels, pitch, 0, 0, w, h, letterbox_offset(h));
 }
 
+/*
+ * Wait for the frame in flight to land.
+ *
+ * The same wait the next present would do, brought forward because the client is
+ * about to draw into the buffer the DMA is reading. It goes through
+ * wait_for_panel() rather than waiting directly so the time counts as core 0
+ * idle: a client that owns one buffer spends most of its spare frame here, and
+ * counting it anywhere else would report that core as fully loaded while it sat
+ * spinning on the panel.
+ */
 void psdl_backend_video_sync(void)
 {
-	if (s_xfer != NULL) {
-		dispDmaTransferWaitFinish(s_xfer);
-		s_xfer = NULL;
-	}
+	wait_for_panel();
 }
 
 /*
