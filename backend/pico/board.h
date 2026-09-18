@@ -111,13 +111,14 @@
  * Display - ST7789 over PIO0, 4-wire SPI
  * ========================================================================
  *
- * The driver in pio-st7789 has its own pinout.h with its own names; it derives
- * them from these, so these are the only definitions. MISO is
- * declared because the driver configures the pin, though nothing reads it - the
- * panel is write-only in this design.
+ * These are the only definitions. The driver in pio-st7789 knows no pin numbers
+ * of its own: psdl_pico_video.c fills in a struct dispPinout from what follows
+ * and hands it to dispInit(). MISO is declared because the driver configures the
+ * pin, though nothing reads it - the panel is write-only in this design.
  *
  * Chip select and SPI clock must stay consecutive: the PIO program side-sets two
- * bits based at the CS pin, so SCK has to be CS + 1.
+ * bits based at the CS pin, so SCK has to be CS + 1. dispInit() checks it and
+ * refuses rather than leaving the panel dark with nothing to read.
  */
 #define PSDL_BOARD_LCD_DC_PIN      8   /* data / command select     */
 #define PSDL_BOARD_LCD_CS_PIN      9   /* active low; sideset base  */

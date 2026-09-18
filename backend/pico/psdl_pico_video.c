@@ -17,11 +17,9 @@
 #include "pico/stdlib.h"
 
 #include "dispPioSt7789.h"
-#include "pinout.h"
 
 #include "psdl_font.h"
 #include "psdl_internal.h"
-#include "psdl_pico.h"
 #include "psdl_pico.h"
 
 static struct dmaTransfer *s_xfer;
@@ -313,12 +311,12 @@ static void claim_display_dma_channels(void)
 static void lcd_pins_init(void)
 {
 	static const struct { uint8_t pin; bool is_output; } pins[] = {
-		{ PIN_LCD_DnC,   true  },
-		{ PIN_LCD_CS,    true  },
-		{ PIN_SPI_CLK,   true  },
-		{ PIN_SPI_MOSI,  true  },
-		{ PIN_SPI_MISO,  false },
-		{ PIN_LCD_RESET, true  },
+		{ PSDL_BOARD_LCD_DC_PIN,    true  },
+		{ PSDL_BOARD_LCD_CS_PIN,    true  },
+		{ PSDL_BOARD_LCD_SCK_PIN,   true  },
+		{ PSDL_BOARD_LCD_MOSI_PIN,  true  },
+		{ PSDL_BOARD_LCD_MISO_PIN,  false },
+		{ PSDL_BOARD_LCD_RESET_PIN, true  },
 	};
 
 	for (unsigned i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
@@ -329,9 +327,9 @@ static void lcd_pins_init(void)
 	}
 
 	/* Reset pulse: active low. */
-	gpio_put(PIN_LCD_RESET, 0);
+	gpio_put(PSDL_BOARD_LCD_RESET_PIN, 0);
 	sleep_ms(10);
-	gpio_put(PIN_LCD_RESET, 1);
+	gpio_put(PSDL_BOARD_LCD_RESET_PIN, 1);
 	sleep_ms(120);
 }
 
@@ -343,8 +341,20 @@ void psdl_backend_video_init(int w, int h)
 	claim_display_dma_channels();
 	lcd_pins_init();
 
-	if (!dispInit())
-		psdl_panic("picosdl: dispInit() failed");
+	/* The driver has no board of its own: it is told how this one is wired.
+	 * board.h is the only place these numbers exist. */
+	static const struct dispPinout lcd_pins = {
+		.dnc   = PSDL_BOARD_LCD_DC_PIN,
+		.cs    = PSDL_BOARD_LCD_CS_PIN,
+		.sck   = PSDL_BOARD_LCD_SCK_PIN,
+		.mosi  = PSDL_BOARD_LCD_MOSI_PIN,
+		.miso  = PSDL_BOARD_LCD_MISO_PIN,
+		.reset = PSDL_BOARD_LCD_RESET_PIN,
+	};
+
+	if (!dispInit(&lcd_pins))
+		psdl_panic("picosdl: dispInit() rejected the pinout in board.h - "
+		           "every pin must be 0..31 and SCK must be CS + 1");
 
 	/* The game's canvas is shorter than the panel. Centre it and paint the
 	 * bars once - nothing draws there again, so they stay black. */
