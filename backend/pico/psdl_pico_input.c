@@ -57,13 +57,13 @@ static Uint32 s_last_poll_ms;
 
 #if PSDL_HAVE_GAMEPAD
 /*
- * The pad needs its own rate gate, and used to borrow the joystick's by accident.
+ * The pad needs a rate gate of its own, not a share of the joystick's.
  *
  * SDL_PumpEvents() calls this backend, and SDL_PollEvent() calls SDL_PumpEvents -
  * so a client draining its event queue with `while (SDL_PollEvent(&e))` pumps
- * several times a frame. The joystick has always been gated, but the pad was read
- * on every pump at 1.03 ms of I2C a go, which with the joystick compiled out had
- * nothing slowing it down at all. Same interval, its own timestamp.
+ * several times a frame. Ungated, the pad is read on every one of those at 1.03 ms
+ * of I2C a go, and in a build with the joystick compiled out there is nothing else
+ * to slow it down. Same interval as the joystick, its own timestamp.
  */
 static Uint32 s_pad_poll_ms;
 #endif
@@ -78,12 +78,13 @@ static Uint32 s_pad_poll_ms;
 /*
  * The serial console.
  *
- * Typed into the serial terminal, not on the Bluetooth keyboard. It used to be
- * wired through btstack_stdin_setup(), which hooks stdin onto BTstack's run loop -
- * so a build without Bluetooth had no console at all, including the commands that
- * have nothing to do with Bluetooth. On a board with a stick and a pad and no
- * keyboard that left a volume which could be neither read nor changed, since the
- * volume keys arrive over Bluetooth too.
+ * Typed into the serial terminal, not on the Bluetooth keyboard.
+ *
+ * Deliberately not wired through btstack_stdin_setup(), which hooks stdin onto
+ * BTstack's run loop: that would leave a build without Bluetooth no console at
+ * all, including the commands that have nothing to do with Bluetooth. On a board
+ * with a stick and a pad and no keyboard it would leave a volume that could be
+ * neither read nor changed, since the volume keys arrive over Bluetooth too.
  *
  * So stdin is polled here instead. getchar_timeout_us(0) returns immediately when
  * there is nothing waiting, and this runs on core 0 outside any interrupt, which is

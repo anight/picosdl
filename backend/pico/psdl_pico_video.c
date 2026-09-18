@@ -454,6 +454,11 @@ static void wait_for_panel(void)
  *
  * `pitch` is in bytes here, as it is in SDL_Surface and in the public API;
  * dispDrawBuffer16() wants pixels, so the 16bpp path divides.
+ *
+ * Always asynchronous: this arms the transfer and returns, and the next present
+ * waits for it. Whether that is safe is the client's to know - it owns the
+ * framebuffers and picosdl cannot see how many it cycles - so a client drawing
+ * into the buffer it just presented calls PSDL_PresentSync() first.
  */
 static struct dmaTransfer *push(const Uint8 *pixels, int pitch,
                                 int x, int y, int w, int h, int offset_y)
@@ -492,17 +497,6 @@ void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
 	wait_for_panel();
 
 	s_xfer = push(pixels, pitch, x, y, w, h, s_offset_y);
-
-#if PSDL_SCREEN_BUFFERS == 1
-	/*
-	 * One buffer means the caller is about to draw into the memory the DMA is
-	 * reading, so the push has to finish before this returns. That serialises
-	 * drawing behind the panel instead of overlapping it - about 1.8 ms onto a
-	 * 17.4 ms frame on the client measured so far, which is what the second
-	 * buffer was really buying.
-	 */
-	wait_for_panel();
-#endif
 }
 
 void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
@@ -519,10 +513,6 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 		bands_tick();
 
 	s_xfer = push(pixels, pitch, 0, 0, w, h, letterbox_offset(h));
-
-#if PSDL_SCREEN_BUFFERS == 1
-	wait_for_panel();   /* see psdl_backend_video_present_rect */
-#endif
 }
 
 void psdl_backend_video_sync(void)

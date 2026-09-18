@@ -159,7 +159,6 @@ typedef struct SDL_Surface {
 	SDL_bool         has_colorkey;
 	Uint8            alpha_mod;
 	int              blend_mode;
-	int              pool_slot;   /* screen-buffer pool index + 1, else 0 */
 } SDL_Surface;
 
 /*
@@ -275,7 +274,26 @@ typedef struct SDL_Window SDL_Window;
 #define SDL_WINDOW_ALLOW_HIGHDPI    0x00002000u
 #define SDL_WINDOW_FULLSCREEN_DESKTOP (SDL_WINDOW_FULLSCREEN | 0x00001000u)
 
-SDL_Window  *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint32 flags);
+/*
+ * Create the window over a framebuffer the caller owns.
+ *
+ * picosdl allocates no pixels anywhere, so there is no SDL_CreateWindow() here:
+ * its signature has nowhere to put the memory, and a library that answered it
+ * would have to keep a full-screen buffer of its own for every client, whether or
+ * not that client already had one.
+ *
+ * `pixels` is the canvas. SDL_GetWindowSurface() returns a surface wrapping it,
+ * which the blitters and SDL_FillRect() can target, and SDL_UpdateWindowSurface()
+ * pushes it to the panel. `pitch` is in bytes.
+ *
+ * The buffer must be in this build's pixel format - 8bpp indices, or RGB565 at
+ * PSDL_COLOR_DEPTH=16 - and outlive the window. One window at a time; a second
+ * call returns the same one.
+ *
+ * A client that wants no surface at all can skip this entirely and call
+ * PSDL_PresentBuffer().
+ */
+SDL_Window  *PSDL_CreateWindow(void *pixels, int w, int h, int pitch);
 void         SDL_DestroyWindow(SDL_Window *window);
 SDL_Surface *SDL_GetWindowSurface(SDL_Window *window);
 int          SDL_UpdateWindowSurface(SDL_Window *window);
@@ -643,29 +661,30 @@ SDL_RWops *SDL_RWFromFile(const char *file, const char *mode);
 /* ------------------------------------------------------------ presenting */
 
 /*
- * Present a buffer the caller owns.
+ * Present a framebuffer the caller owns.
  *
- * picosdl offers two ways to get a frame onto the panel, and which one you use
- * is independent of the pixel format:
+ * picosdl never allocates pixels: every buffer it touches belongs to the client,
+ * which is what lets the library have no full-screen memory of its own and lets a
+ * client size and place its own to suit.
  *
- *   - SDL_CreateWindow() + SDL_GetWindowSurface() + SDL_UpdateWindowSurface(),
- *     where picosdl owns the canvas and hands it to you. This is SDL's own
- *     model and needs PSDL_SCREEN_BUFFERS to be at least 1.
+ * Two ways to push one, and they differ only in whether you also want an
+ * SDL_Surface over it:
  *
- *   - PSDL_PresentBuffer(), where you own the memory and picosdl only pushes it.
- *     A client that already has a framebuffer - anything with its own renderer -
- *     wants this, and can then build with PSDL_SCREEN_BUFFERS=0 and get the
- *     whole pool back.
+ *   - PSDL_CreateWindow() + SDL_GetWindowSurface() + SDL_UpdateWindowSurface(),
+ *     when you want the blitters, SDL_FillRect() or partial-rectangle updates.
  *
- * Both work at either PSDL_COLOR_DEPTH. The depth says what a pixel *is*; it has
- * nothing to do with who allocates it.
+ *   - PSDL_PresentBuffer(), when you have a framebuffer and want it on the panel.
+ *     A client with its own renderer wants this; there is nothing for a surface
+ *     to add.
  *
- * `pixels` must be in this build's format - 8bpp indices, or RGB565 at depth 16 -
- * and `pitch` is in BYTES, as everywhere else in SDL. The push is asynchronous:
- * it returns once the transfer has started, so the next frame overlaps it and the
- * following present waits. Call PSDL_PresentSync() when you need the frame to
- * have landed, which a single-buffered client must do before drawing into the
- * buffer the DMA is still reading.
+ * Both work at either PSDL_COLOR_DEPTH. `pixels` must be in this build's format,
+ * and `pitch` is in BYTES, as everywhere else in SDL.
+ *
+ * The push is asynchronous: it returns once the transfer has started, so the next
+ * frame overlaps it and the following present waits for it. PSDL_PresentSync()
+ * waits for the frame in flight to land, which a client drawing into the buffer
+ * it just presented must call first - picosdl cannot know how many buffers you
+ * are cycling, so when to wait is yours to say.
  */
 void     PSDL_PresentBuffer(const void *pixels, int w, int h, int pitch);
 void     PSDL_PresentSync(void);

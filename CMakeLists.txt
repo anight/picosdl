@@ -132,20 +132,6 @@ option(PICOSDL_INPUT_GAMEPAD     "I2C game controller (Adafruit Gamepad QT)" ON)
 #
 option(PICOSDL_AUDIO "I2S audio output (MAX98357A)" ON)
 
-# Full-screen buffers in the pool, and the axis that decides whether picosdl
-# allocates a canvas at all. Independent of the colour depth: what a pixel is and
-# who owns the memory are separate questions.
-#
-# 2 is the comfortable answer and the default. 1 hands the job of holding the
-# visible frame to the panel's own memory, which costs the overlap between drawing
-# and pushing - present has to block until the push finishes, because the client is
-# about to draw into the buffer the DMA is reading. A client that wants 1 has to be
-# written for it.
-#
-# 0 means the client owns its framebuffer and calls PSDL_PresentBuffer().
-# SDL_CreateWindow() then fails, saying so, and the pool is not compiled in - which
-# is the whole point, since it would otherwise be dead memory. At depth 16 that is
-# 128 KB of it.
 #
 # Colour depth, and the one option that changes the shape of the API.
 #
@@ -167,10 +153,6 @@ if (NOT PICOSDL_COLOR_DEPTH EQUAL 8 AND NOT PICOSDL_COLOR_DEPTH EQUAL 16)
     message(FATAL_ERROR "PICOSDL_COLOR_DEPTH must be 8 or 16, got '${PICOSDL_COLOR_DEPTH}'")
 endif()
 message(STATUS "picosdl colour depth: ${PICOSDL_COLOR_DEPTH}bpp")
-
-set(PICOSDL_SCREEN_BUFFERS 2 CACHE STRING "Full-screen buffers in the pool (0, 1 or 2)")
-set_property(CACHE PICOSDL_SCREEN_BUFFERS PROPERTY STRINGS 0 1 2)
-message(STATUS "picosdl screen buffers: ${PICOSDL_SCREEN_BUFFERS}")
 
 message(STATUS "picosdl inputs: BT keyboard=${PICOSDL_INPUT_BT_KEYBOARD} "
                "joystick=${PICOSDL_INPUT_JOYSTICK} gamepad=${PICOSDL_INPUT_GAMEPAD}")
@@ -211,15 +193,7 @@ if (PICOSDL_AUDIO)
     target_compile_definitions(picosdl PUBLIC PSDL_HAVE_AUDIO=1)
 endif()
 
-# PUBLIC because the client's own code tests it: a single-buffered client has to
-# know not to expect an offscreen surface of its own, and a client at 0 has to
-# know there is no window surface to ask for.
-#
-# Unconditional. This lived inside the audio block above, which meant a build with
-# audio off never defined it at all and silently fell back to the header's default
-# of 2 - so PICOSDL_SCREEN_BUFFERS was quietly ignored by exactly the builds most
-# likely to be short of memory.
-target_compile_definitions(picosdl PUBLIC PSDL_SCREEN_BUFFERS=${PICOSDL_SCREEN_BUFFERS})
+
 
 if (PICOSDL_INPUT_JOYSTICK)
     target_sources(picosdl PRIVATE backend/pico/joystick.c)
@@ -340,18 +314,11 @@ set_source_files_properties(
 # add_subdirectory().
 #
 #
-# It needs two things this build might not have, and defaults off without either.
+# An 8bpp program: it animates the CLUT and blits indexed sprites, which at depth
+# 16 would draw nonsense into an RGB565 buffer. So it is not built by default
+# there. Ask for it explicitly if you want it anyway.
 #
-# An 8bpp canvas, because it animates the CLUT and blits indexed sprites - at
-# depth 16 those draw nonsense into an RGB565 buffer. And a canvas at all: at
-# PSDL_SCREEN_BUFFERS=0 there is none and SDL_CreateWindow() returns NULL.
-#
-# It exits cleanly saying so in either case rather than crashing, but a binary
-# whose whole documented job is to be the first thing run on a new board should
-# not be built by default in a configuration where it quits immediately. Ask for
-# it explicitly if you want to watch it do that.
-#
-if (PICOSDL_STANDALONE AND PICOSDL_COLOR_DEPTH EQUAL 8 AND PICOSDL_SCREEN_BUFFERS GREATER 0)
+if (PICOSDL_STANDALONE AND PICOSDL_COLOR_DEPTH EQUAL 8)
     set(PICOSDL_BUILD_DEMO_DEFAULT ON)
 else()
     set(PICOSDL_BUILD_DEMO_DEFAULT OFF)

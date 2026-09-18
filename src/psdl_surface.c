@@ -6,7 +6,7 @@
  *
  *   PSDL_SURF_EXTERN  caller-supplied pixels (const data in XIP, or a static
  *                     buffer someone else owns). Freeing is a no-op.
- *   PSDL_SURF_STATIC  a named static framebuffer, or a screen-pool slot.
+ *   PSDL_SURF_STATIC  a framebuffer the caller owns and keeps alive itself.
  *   PSDL_SURF_ARENA   the LIFO bump arena below.
  *
  * Orthogonal to that, PSDL_SURF_CONST marks a surface whose *object* is also in
@@ -48,24 +48,6 @@ typedef struct {
 static arena_entry_t s_arena_stack[PSDL_ARENA_MAX_ENTRIES];
 static int           s_arena_depth;
 
-/*
- * Full-screen buffers get their own pool rather than coming out of the arena.
- * SDLPoP asks for several of these (the window surface, the offscreen buffer
- * the game draws into) and at 320x200 they are 62.5 KB each - putting them in
- * the arena would mean sizing the arena for them and wasting it the rest of the
- * time. They also outlive everything, so they never want reclaiming.
- *
- * Sized by the build's pixel format, and not compiled in at all when
- * PSDL_SCREEN_BUFFERS is 0 - which is how a client that owns its own framebuffer
- * says so, and gets the memory back.
- */
-#define PSDL_SCREEN_BYTES \
-	((size_t)PSDL_SCREEN_W * (size_t)PSDL_SCREEN_H * PSDL_BYTES_PER_PIXEL)
-#if PSDL_SCREEN_BUFFERS > 0
-static Uint8 s_screen_pool[PSDL_SCREEN_BUFFERS][PSDL_SCREEN_BYTES] __attribute__((aligned(4)));
-static Uint8 s_screen_pool_used[PSDL_SCREEN_BUFFERS];
-#endif
-
 void psdl_surface_init(void)
 {
 	s_free_headers = NULL;
@@ -76,10 +58,6 @@ void psdl_surface_init(void)
 	s_headers_in_use = 0;
 	s_arena_top = 0;
 	s_arena_depth = 0;
-#if PSDL_SCREEN_BUFFERS > 0
-	memset(s_screen_pool_used, 0, sizeof(s_screen_pool_used));
-#endif
-
 	/* The palette belongs to the indexed format. At depth 8 that is also the
 	 * build's format; at 16 the build's format has no palette and keeps NULL. */
 	psdl_pixel_format_index8.palette = PSDL_GlobalPalette();
@@ -188,26 +166,6 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
 		return NULL;
 	}
 
-	/* A request for exactly the screen size comes from the dedicated pool. */
-#if PSDL_SCREEN_BUFFERS > 0
-	if (width == PSDL_SCREEN_W && height == PSDL_SCREEN_H) {
-		for (int i = 0; i < PSDL_SCREEN_BUFFERS; ++i) {
-			if (s_screen_pool_used[i])
-				continue;
-			s_screen_pool_used[i] = 1;
-			memset(s_screen_pool[i], 0, PSDL_SCREEN_BYTES);
-			SDL_Surface *s = psdl_surface_alloc_header();
-			surface_finish(s, s_screen_pool[i], width, height,
-			               PSDL_SCREEN_W * PSDL_BYTES_PER_PIXEL,
-			               PSDL_SURF_STATIC, &psdl_pixel_format);
-			s->pool_slot = i + 1;
-			return s;
-		}
-		SDL_SetError("picosdl: out of screen buffers - raise PSDL_SCREEN_BUFFERS");
-		return NULL;
-	}
-#endif
-
 	/* Pitch is in bytes and rounded up so rows stay word-aligned. */
 	int    pitch = (width * PSDL_BYTES_PER_PIXEL + 3) & ~3;
 	size_t bytes = (size_t)pitch * (size_t)height;
@@ -271,11 +229,6 @@ void SDL_FreeSurface(SDL_Surface *surface)
 	if (--surface->refcount > 0)
 		return;
 
-#if PSDL_SCREEN_BUFFERS > 0
-	if (surface->pool_slot > 0) {
-		s_screen_pool_used[surface->pool_slot - 1] = 0;
-	} else
-#endif
 	if ((surface->flags & PSDL_SURF_REGION) == PSDL_SURF_ARENA) {
 		/* Mark dead, then unwind as far as the stack allows. In the normal
 		 * LIFO case this reclaims immediately. */
@@ -458,16 +411,8 @@ void PSDL_DumpArena(void)
 
 void PSDL_ReportMemory(void)
 {
-	int screens = 0;
-#if PSDL_SCREEN_BUFFERS > 0
-	for (int i = 0; i < PSDL_SCREEN_BUFFERS; ++i)
-		screens += s_screen_pool_used[i];
-#endif
-
-	printf("picosdl: surfaces %d/%d (peak %d), arena %u/%u bytes (peak %u, depth %d), "
-	       "screen buffers %d/%d\n",
+	printf("picosdl: surfaces %d/%d (peak %d), arena %u/%u bytes (peak %u, depth %d)\n",
 	       s_headers_in_use, PSDL_MAX_SURFACES, s_headers_high_water,
 	       (unsigned)s_arena_top, (unsigned)PSDL_ARENA_BYTES,
-	       (unsigned)s_arena_high_water, s_arena_depth,
-	       screens, PSDL_SCREEN_BUFFERS);
+	       (unsigned)s_arena_high_water, s_arena_depth);
 }

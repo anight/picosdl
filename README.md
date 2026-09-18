@@ -46,7 +46,7 @@ dispatch without a general allocator underneath:
 | region | what it holds | freeing |
 |---|---|---|
 | `PSDL_SURF_EXTERN` | pixels owned by the caller, typically `const` data in XIP | no-op |
-| `PSDL_SURF_STATIC` | the screen-buffer pool, 320×200 each | returns a slot |
+| `PSDL_SURF_STATIC` | a static buffer someone else keeps alive | no-op |
 | `PSDL_SURF_ARENA` | a LIFO bump arena | pops the stack |
 
 Orthogonally, `PSDL_SURF_CONST` marks a surface whose **object** — not just its
@@ -61,9 +61,12 @@ order, which makes fragmentation structurally impossible. Out-of-order frees are
 tolerated but do not reclaim until the top of the stack is dead — so a non-LIFO
 caller shows up as arena pressure rather than as corruption.
 
-Full-screen surfaces get their own pool rather than coming from the arena: at
-62.5 KB each they would otherwise force the arena to be sized for them and waste
-it the rest of the time.
+Framebuffers are not in this table because picosdl does not allocate any. The
+canvas belongs to the client, which hands it to `PSDL_CreateWindow()` or straight
+to `PSDL_PresentBuffer()` — so the library holds no full-screen memory at all, and
+a client pays for exactly the buffers it uses rather than for a pool sized by
+guess. At 62.5 KB apiece that is the difference between the library costing 40 KB
+and costing 170.
 
 ### Scancodes need no translation
 
@@ -212,44 +215,42 @@ What the depth changes is what a pixel **is**, and nothing else:
 | `SDL_Surface::format` | `SDL_PIXELFORMAT_INDEX8` | `SDL_PIXELFORMAT_RGB565` |
 | palette | the CLUT, written directly | nothing to index |
 | blitters, `PSDL_Blit*` | operate on indices | index operations, so not useful |
-| screen buffer | 62.5 KB | 125 KB |
+| a 320×200 frame costs | 62.5 KB | 125 KB |
 
-It does **not** decide whether picosdl allocates your canvas. That is
-`PSDL_SCREEN_BUFFERS`, and the two are independent — see below.
+It does **not** decide who allocates your framebuffer. Nobody in picosdl does.
 
 ### Who owns the framebuffer
 
-Two ways to get a frame onto the panel, and both work at either depth:
+You do, always. picosdl allocates no pixels — there is no screen pool and no
+`SDL_CreateWindow()`, whose signature has nowhere to put your memory and which
+would otherwise force a full-screen buffer into the library for every client,
+including the ones that already have one.
+
+Two ways to push a frame, differing only in whether you also want an
+`SDL_Surface` over it:
 
 ```c
-/* picosdl owns the canvas - SDL's own model. Needs PSDL_SCREEN_BUFFERS >= 1. */
-SDL_Window  *win = SDL_CreateWindow(...);
-SDL_Surface *fb  = SDL_GetWindowSurface(win);
-draw_into(fb->pixels);
+static Uint8 canvas[320 * 200];              /* yours */
+
+/* With a surface: the blitters, SDL_FillRect and partial-rect updates. */
+SDL_Window  *win = PSDL_CreateWindow(canvas, 320, 200, 320);
+SDL_Surface *fb  = SDL_GetWindowSurface(win);   /* wraps canvas, no copy */
 SDL_UpdateWindowSurface(win);
 
-/* You own it. Build with PSDL_SCREEN_BUFFERS=0 and get the pool back. */
-static uint16_t fb[320 * 200];
-PSDL_PresentSync();                                   /* last frame has landed */
-draw_into(fb);
-PSDL_PresentBuffer(fb, 320, 200, 320 * sizeof *fb);   /* pitch in BYTES */
+/* Without one: you have a framebuffer and want it on the panel. */
+PSDL_PresentBuffer(canvas, 320, 200, 320);      /* pitch in BYTES */
 ```
 
-A client with its own renderer already has a framebuffer and wants the second,
-whatever its pixel format. A client that wants somewhere to draw wants the first,
-whatever its pixel format. Conflating that with the depth would mean a 16bpp
-client could not ask picosdl for a buffer, and an 8bpp one could not bring its
-own, neither of which follows from anything about pixels.
+A client with its own renderer wants the second — there is nothing for a surface
+to add to a frame it has already finished. A client that wants somewhere to draw
+wants the first. Either works at either depth.
 
-`PSDL_SCREEN_BUFFERS=0` is the only thing that removes `SDL_CreateWindow()`: with
-no pool there is no canvas to hand back, so it fails and says so. That is a
-coupling between a buffer count and a buffer, which is the honest kind.
-
-The push is asynchronous either way: it returns once the transfer has started, so
-the next frame overlaps it and the following present waits. A single-buffered
-client calls `PSDL_PresentSync()` before drawing into the buffer the DMA is still
-reading — which is what `PSDL_SCREEN_BUFFERS=1` means, and what a client owning
-one buffer of its own has to do too.
+The push is asynchronous: it returns once the transfer has started, so the next
+frame overlaps it and the following present waits. A client drawing into the
+buffer it just presented calls `PSDL_PresentSync()` first. That is the client's
+call to make rather than the library's, because only the client knows how many
+buffers it is cycling — one, and you sync every frame and let the panel hold the
+visible image; two, and you never wait at all.
 
 Everything else is untouched and is the reason to still be here: input, events,
 timers, audio, the status bands and the serial console behave identically at both
@@ -423,11 +424,6 @@ cmake -S . -B build -DPICOSDL_COLOR_DEPTH=16
 RGB565 value, which suits a client that already produces those - anything with
 its own renderer. [Direct colour](#direct-colour) covers what it is for.
 
-It is independent of `PICOSDL_SCREEN_BUFFERS`, which is what decides whether
-picosdl allocates your canvas; a client may take one at either depth or bring its
-own at either depth. Set the buffer count to 0 to say you have your own and
-reclaim the pool.
-
 Anything other than 8 or 16 is refused at configure time rather than producing a
 build that half works.
 
@@ -436,9 +432,8 @@ build that half works.
 A standalone 8bpp build produces `picosdl-demo`, which is the thing to run first
 on a new board. It is an 8bpp program — it opens a window, blits sprites and
 animates the CLUT — so it is not built by default at
-`PICOSDL_COLOR_DEPTH=16`, where `SDL_CreateWindow()` returns NULL. It still
-compiles and links there, and asking for it explicitly gets you a binary that
-prints the error and exits; there is just no reason to want one. It exercises a palette animation driven by CLUT writes alone, a
+`PICOSDL_COLOR_DEPTH=16`, where those would draw nonsense into an RGB565 buffer.
+Asking for it explicitly still builds it; there is just no reason to want one. It exercises a palette animation driven by CLUT writes alone, a
 flash-resident sprite blitted plain, mirrored and XORed, text through the keyed
 blitter and the LIFO arena, a Bluetooth keyboard, an analog stick, a four-voice
 synth in an audio callback and an original tune - and puts the frame rate, the
@@ -657,33 +652,27 @@ upstream, and it is worth offering back.
 
 Static RAM, measured from a linked image:
 
-| | 8bpp, 2 buffers | 16bpp, 0 buffers |
+| | 8bpp | 16bpp |
 |---|---|---|
-| screen pool | 128000 | — |
 | LIFO arena | 16384 | 16384 |
-| surface headers (192) | 13056 | 13056 |
+| surface headers (192 × 64) | 12288 | 12288 |
 | status band staging (8bpp) | 6400 | 6400 |
 | status band staging (RGB565) | — | 12800 |
 | event ring (64) | 3584 | 3584 |
 | palette | 1024 | 1024 |
 | audio mix buffer | 1024 | 1024 |
 | arena stack | 768 | 768 |
-| **total** | **170240 (166.2 KB)** | **55040 (53.8 KB)** |
+| **total** | **41472 (40.5 KB)** | **54272 (53.0 KB)** |
 
-Two rows move with the depth. The screen pool doubles, because each buffer is a
-frame of whatever a pixel now is — and it disappears entirely at
-`PSDL_SCREEN_BUFFERS=0`, which is the setting, not the depth, that says the client
-has its own. The figures above are for two buffers at 8bpp and none at 16, which
-is what each depth's typical client asks for; a 16bpp client that does want
-picosdl's canvas pays 125 KB a buffer for it. The second band buffer is the cost
-of keeping the status line at a depth where the PIO does not expand its pixels.
+No framebuffer appears in either column, because the library allocates none: a
+client's canvas is its own and costs it 62.5 KB at 8bpp or 125 KB at 16, once per
+buffer it chooses to keep. One row moves with the depth — the second band buffer,
+which is the cost of keeping the status line where the PIO does not expand its
+pixels.
 
-All of it is tunable: `PSDL_SCREEN_BUFFERS`, `PSDL_ARENA_BYTES`,
-`PSDL_MAX_SURFACES`, `PSDL_EVENT_QUEUE_LEN` and `PSDL_AUDIO_BLOCK_FRAMES` are
-`#ifndef`-guarded in `src/psdl_internal.h`, so a client can override any of them
-from its own build. At 8bpp the screen pool dominates, and a client that
-composites directly into the framebuffer rather than into an offscreen buffer can
-halve it.
+All of it is tunable: `PSDL_ARENA_BYTES`, `PSDL_MAX_SURFACES`,
+`PSDL_EVENT_QUEUE_LEN` and `PSDL_AUDIO_BLOCK_FRAMES` are `#ifndef`-guarded in
+`src/psdl_internal.h`, so a client can override any of them from its own build.
 
 The library contributes **zero** heap. Two SDK functions do allocate, both
 one-shot at init — `alarm_pool_create_on_timer_with_unused_hardware_alarm` and

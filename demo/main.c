@@ -362,9 +362,12 @@ int main(void)
 		return 1;
 	}
 
-	SDL_Window *window = SDL_CreateWindow("picosdl", SDL_WINDOWPOS_UNDEFINED,
-	                                      SDL_WINDOWPOS_UNDEFINED, 320, 200,
-	                                      SDL_WINDOW_FULLSCREEN_DESKTOP);
+	/* The canvas is ours, not picosdl's - the library allocates no pixels. One
+	 * buffer, so the panel holds the visible frame and PSDL_PresentSync() below
+	 * is what keeps the DMA off it while we draw. */
+	static Uint8 canvas[320 * 200];
+
+	SDL_Window *window = PSDL_CreateWindow(canvas, 320, 200, 320);
 	SDL_Surface *screen = SDL_GetWindowSurface(window);
 	if (screen == NULL) {
 		printf("no window surface: %s\n", SDL_GetError());
@@ -493,6 +496,11 @@ int main(void)
 		if (sprite_y > screen->h - SPRITE_H) sprite_y = screen->h - SPRITE_H;
 
 		/* ---- draw ---- */
+		/* One canvas, so the previous push has to have landed before anything
+		 * writes into it again. picosdl cannot know that on our behalf - the
+		 * buffers are ours - so saying it is our job. */
+		PSDL_PresentSync();
+
 		/* Background bands. The indices never change from frame to frame; the
 		 * motion you see comes entirely from rotating the CLUT below. */
 		for (int y = 0; y < screen->h; y += 4) {

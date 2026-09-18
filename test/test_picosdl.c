@@ -268,41 +268,52 @@ static void test_arena_lifo(void)
 	SDL_FreeSurface(b);
 }
 
-static void test_screen_pool(void)
+static void test_client_owned_window(void)
 {
-	section("screen pool");
+	section("client-owned window");
 
-	SDL_Surface *a = SDL_CreateRGBSurface(0, PSDL_SCREEN_W, PSDL_SCREEN_H, 8, 0, 0, 0, 0);
-	CHECK(a != NULL && a->pool_slot > 0,
-	      "a screen-sized surface should come from the screen pool");
-	CHECK(a != NULL && a->pitch == PSDL_SCREEN_W, "screen surface pitch wrong");
+	/* picosdl allocates no pixels: the window wraps memory we brought. */
+	static Uint8 canvas[PSDL_SCREEN_W * PSDL_SCREEN_H];
+	for (size_t i = 0; i < sizeof(canvas); ++i)
+		canvas[i] = (Uint8)i;
 
-	/* Exhausting the pool must fail cleanly, not fall back to the arena and
-	 * quietly eat 62 KB of it. */
-	SDL_Surface *held[PSDL_SCREEN_BUFFERS + 1];
-	int n = 0;
-	held[n++] = a;
-	while (n <= PSDL_SCREEN_BUFFERS) {
-		SDL_Surface *s = SDL_CreateRGBSurface(0, PSDL_SCREEN_W, PSDL_SCREEN_H,
-		                                      8, 0, 0, 0, 0);
-		if (s == NULL)
-			break;
-		held[n++] = s;
-	}
-	CHECK(n == PSDL_SCREEN_BUFFERS,
-	      "expected exactly %d screen buffers, got %d", PSDL_SCREEN_BUFFERS, n);
+	SDL_Window *win = PSDL_CreateWindow(canvas, PSDL_SCREEN_W, PSDL_SCREEN_H,
+	                                    PSDL_SCREEN_W);
+	CHECK(win != NULL, "PSDL_CreateWindow should accept a caller buffer");
 
-	for (int i = 0; i < n; ++i)
-		SDL_FreeSurface(held[i]);
+	SDL_Surface *s = SDL_GetWindowSurface(win);
+	CHECK(s != NULL, "window should have a surface");
+	CHECK(s != NULL && s->pixels == canvas,
+	      "the window surface must wrap the caller's memory, not a copy");
+	CHECK(s != NULL && s->pitch == PSDL_SCREEN_W, "window surface pitch wrong");
+	CHECK(s != NULL && s->w == PSDL_SCREEN_W && s->h == PSDL_SCREEN_H,
+	      "window surface size wrong");
 
-	/* And they must come back. */
-	SDL_Surface *again = SDL_CreateRGBSurface(0, PSDL_SCREEN_W, PSDL_SCREEN_H,
-	                                          8, 0, 0, 0, 0);
-	CHECK(again != NULL, "screen buffers were not returned to the pool");
-	SDL_FreeSurface(again);
+	/* External pixels: freeing releases the header and must not touch them. */
+	CHECK(s != NULL && (s->flags & PSDL_SURF_REGION) == PSDL_SURF_EXTERN,
+	      "a client buffer should be PSDL_SURF_EXTERN");
+
+	/* Drawing through the surface reaches the caller's array. */
+	SDL_Rect r = { 0, 0, 4, 1 };
+	SDL_FillRect(s, &r, 0xAB);
+	CHECK(canvas[0] == 0xAB && canvas[3] == 0xAB && canvas[4] == 4,
+	      "FillRect through the window surface should write the caller's buffer");
+
+	/* A present of our own buffer reaches the backend. */
+	extern int host_present_count;
+	int before = host_present_count;
+	SDL_UpdateWindowSurface(win);
+	CHECK(host_present_count == before + 1, "UpdateWindowSurface should present");
+
+	PSDL_PresentBuffer(canvas, PSDL_SCREEN_W, PSDL_SCREEN_H, PSDL_SCREEN_W);
+	CHECK(host_present_count == before + 2, "PresentBuffer should present");
+
+	/* Bad geometry is refused rather than half-accepted. */
+	SDL_DestroyWindow(win);
+	CHECK(PSDL_CreateWindow(NULL, 8, 8, 8) == NULL, "NULL pixels should fail");
+	CHECK(PSDL_CreateWindow(canvas, 8, 8, 2) == NULL,
+	      "a pitch narrower than the row should fail");
 }
-
-/* ------------------------------------------------------------- events */
 
 static void test_events(void)
 {
@@ -415,7 +426,7 @@ int main(void)
 	test_blit_mirrored();
 	test_blit_xor_and_offset();
 	test_arena_lifo();
-	test_screen_pool();
+	test_client_owned_window();
 	test_events();
 	test_palette();
 	test_timers();

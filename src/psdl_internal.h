@@ -13,9 +13,15 @@
 
 /* --------------------------------------------------------------- tunables */
 
-/* The game's canvas. VGA mode 13h minus the borders, which is what Prince of
- * Persia draws into. The panel is 320x240, so this is letterboxed by the video
- * backend rather than scaled. */
+/*
+ * The nominal canvas: VGA mode 13h minus the borders. The panel is 320x240, so
+ * this is letterboxed by the video backend rather than scaled.
+ *
+ * It sizes nothing. picosdl allocates no framebuffer - the client brings its own
+ * and says how big it is at PSDL_CreateWindow() or PSDL_PresentBuffer(), and the
+ * backend centres whatever height it is given. These are what the panel is set up
+ * for and what the host backend captures into.
+ */
 #ifndef PSDL_SCREEN_W
 #define PSDL_SCREEN_W 320
 #endif
@@ -35,10 +41,8 @@
  * blitters are index operations and have nothing to do at that depth, but the
  * canvas, the present path and everything else work the same way.
  *
- * This says what a pixel IS and nothing else. Whether picosdl allocates the
- * canvas is PSDL_SCREEN_BUFFERS, below, and the two are independent: a client can
- * take picosdl's canvas at either depth, or bring its own at either depth and
- * present it with PSDL_PresentBuffer().
+ * This says what a pixel IS and nothing else. The client allocates every
+ * framebuffer either way, and says how big it is when it presents one.
  */
 #ifndef PSDL_COLOR_DEPTH
 #define PSDL_COLOR_DEPTH 8
@@ -54,11 +58,10 @@
  * structurally impossible.
  *
  * 16 KB, against a 6,700-byte peak measured over 400,000 presents of one client
- * covering its title screen, attract demo and gameplay. It was 28 KB, which was
- * a guess that happened to be comfortable. Paths that wait for a human are not
- * in that measurement - a name-entry screen that holds a peel open while the
- * player types pins everything allocated above it - so the margin is there for
- * those, not for growth.
+ * covering its title screen, attract demo and gameplay. Paths that wait for a
+ * human are not in that measurement - a name-entry screen that holds a peel open
+ * while the player types pins everything allocated above it - so the margin is
+ * there for those, not for growth.
  *
  * When this runs out, resist raising it until you have read PSDL_DumpArena().
  * The arena has been exhausted twice, once by a 16.5 KB surface nothing read and
@@ -89,22 +92,6 @@
  */
 #ifndef PSDL_MAX_SURFACES
 #define PSDL_MAX_SURFACES 192
-#endif
-
-/*
- * Full-screen buffers, which get their own pool rather than the arena. A client
- * that draws into an offscreen buffer and flips wants two; one is enough for a
- * client that composites straight into the window surface.
- *
- * 0 means picosdl allocates no canvas at all. SDL_CreateWindow() then fails,
- * saying so, and the pool is not compiled in - which is what a client that owns
- * its own framebuffer and calls PSDL_PresentBuffer() wants, since the pool would
- * otherwise be dead memory. At depth 16 that is 128 KB of it.
- *
- * Each buffer is PSDL_SCREEN_W * PSDL_SCREEN_H * (PSDL_COLOR_DEPTH / 8) bytes.
- */
-#ifndef PSDL_SCREEN_BUFFERS
-#define PSDL_SCREEN_BUFFERS 2
 #endif
 
 /* Bytes per pixel in this build's format, for sizing and for pitch arithmetic. */
@@ -166,7 +153,7 @@ void         psdl_events_init(void);
 void         psdl_timer_init(void);
 void         psdl_audio_init(void);
 
-/* The framebuffer the game draws into, for the video backend to push. */
+/* The window's surface, or NULL if no window was created. Wraps client memory. */
 SDL_Surface *psdl_screen_surface(void);
 
 /* Called by input backends. The push_* functions queue an event; the
@@ -226,7 +213,7 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch);
  *
  * Two callers want it. A client that knows what changed can push only that - the
  * panel keeps everything it was last sent, so anything not pushed stays as it is.
- * And with PSDL_SCREEN_BUFFERS at 1 that retention is the second buffer: the
+ * And for a client with one buffer, that retention is the second buffer: the
  * screen the player is looking at lives in the panel, not in RAM.
  */
 void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,

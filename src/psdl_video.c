@@ -1,11 +1,15 @@
 /*
  * The window and the screen surface.
  *
- * There is one window, it is always fullscreen, and its surface is a 320x200
- * 8bpp framebuffer from the screen pool. SDL_UpdateWindowSurface hands that
- * buffer to the backend, which on hardware kicks a DMA chain and returns
- * immediately - the wait happens at the start of the next present, so drawing
- * overlaps with the panel push.
+ * There is one window, it is always fullscreen, and its surface wraps a
+ * framebuffer the client allocated and handed to PSDL_CreateWindow(). picosdl
+ * owns no pixels.
+ *
+ * SDL_UpdateWindowSurface hands that buffer to the backend, which on hardware
+ * kicks a DMA chain and returns immediately - the wait happens at the start of
+ * the next present, so drawing overlaps with the panel push. A client that draws
+ * into the buffer it just presented calls PSDL_PresentSync() first; only it knows
+ * how many buffers it is cycling.
  */
 #include "psdl_internal.h"
 
@@ -32,49 +36,46 @@ SDL_Surface *psdl_screen_surface(void)
 	return s_window.surface;
 }
 
-SDL_Window *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint32 flags)
+/*
+ * Create the window over a framebuffer the caller owns.
+ *
+ * picosdl allocates no pixels, so this takes them. The surface it hands back
+ * wraps the caller's memory and is never freed by the library - PSDL_SURF_EXTERN
+ * says so, and SDL_FreeSurface() on it releases only the header.
+ *
+ * There is no SDL_CreateWindow(): its signature has nowhere to put the memory,
+ * and answering it would mean keeping a full-screen buffer inside the library for
+ * every client, including the ones that already have one.
+ */
+SDL_Window *PSDL_CreateWindow(void *pixels, int w, int h, int pitch)
 {
-	(void)title; (void)x; (void)y; (void)w; (void)h;
+	if (pixels == NULL || w <= 0 || h <= 0 || pitch < w * PSDL_BYTES_PER_PIXEL) {
+		SDL_SetError("PSDL_CreateWindow: bad buffer %dx%d pitch %d", w, h, pitch);
+		return NULL;
+	}
 
 	psdl_video_init();
 
-#if PSDL_SCREEN_BUFFERS == 0
-	/*
-	 * This build allocates no canvas, so there is none to hand back. That is
-	 * PSDL_SCREEN_BUFFERS=0, which a client sets when it owns its framebuffer
-	 * and presents with PSDL_PresentBuffer() - the pool would otherwise be dead
-	 * memory. Nothing to do with the pixel format: a client at either depth may
-	 * take picosdl's canvas or bring its own.
-	 */
-	(void)flags;
-	SDL_SetError("picosdl: this build has PSDL_SCREEN_BUFFERS=0 and allocates no "
-	             "canvas - present your own buffer with PSDL_PresentBuffer()");
-	return NULL;
-#else
 	if (s_window.in_use)
 		return &s_window;
 
-	s_window.surface = SDL_CreateRGBSurface(0, PSDL_SCREEN_W, PSDL_SCREEN_H,
-	                                        PSDL_COLOR_DEPTH, 0, 0, 0, 0);
-	PSDL_ASSERT(s_window.surface != NULL, "could not create the window surface");
+	s_window.surface = SDL_CreateRGBSurfaceFrom(pixels, w, h, PSDL_COLOR_DEPTH,
+	                                            pitch, 0, 0, 0, 0);
+	if (s_window.surface == NULL)
+		return NULL;
 
-	s_window.w      = PSDL_SCREEN_W;
-	s_window.h      = PSDL_SCREEN_H;
-	s_window.flags  = flags | SDL_WINDOW_FULLSCREEN_DESKTOP;
+	s_window.w      = w;
+	s_window.h      = h;
+	s_window.flags  = SDL_WINDOW_FULLSCREEN_DESKTOP;
 	s_window.in_use = 1;
 	return &s_window;
-#endif
 }
 
 /*
- * Present a buffer the caller owns, in this build's pixel format.
+ * Present a framebuffer the caller owns, without a surface over it.
  *
- * The counterpart to SDL_UpdateWindowSurface() for a client that allocates its
- * own framebuffer, and the same code underneath - the backend present takes a
+ * The same path underneath as SDL_UpdateWindowSurface() - the backend takes a
  * pointer, a size and a byte pitch and does not care where the memory came from.
- *
- * Available at either depth, because who owns the buffer and what a pixel is are
- * separate questions.
  */
 void PSDL_PresentBuffer(const void *pixels, int w, int h, int pitch)
 {
