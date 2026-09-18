@@ -30,15 +30,15 @@
  * pixel, the CLUT expanded by the PIO, and every blitter and surface in this
  * library working in that format.
  *
- * 16 is for a client that produces RGB565 itself, which a 3D rasteriser
- * typically does because it is what the panel wants. There is then nothing for a
- * palette to do and nothing for the blitters to blit: picosdl provides no canvas
- * at all, the client presents its own buffer through PSDL_PresentRGB565(), and
- * the screen pool is not compiled in - it would be 128 KB of nothing. Input,
- * timing, audio and events are unaffected and are the reason to still be here.
+ * 16 is RGB565, for a client that produces it directly - anything with its own
+ * renderer, since RGB565 is what the panel wants anyway. The palette and the
+ * blitters are index operations and have nothing to do at that depth, but the
+ * canvas, the present path and everything else work the same way.
  *
- * SDL_CreateWindow() fails at 16 rather than handing back a surface in a format
- * this library cannot draw into. That is the whole of the API difference.
+ * This says what a pixel IS and nothing else. Whether picosdl allocates the
+ * canvas is PSDL_SCREEN_BUFFERS, below, and the two are independent: a client can
+ * take picosdl's canvas at either depth, or bring its own at either depth and
+ * present it with PSDL_PresentBuffer().
  */
 #ifndef PSDL_COLOR_DEPTH
 #define PSDL_COLOR_DEPTH 8
@@ -91,11 +91,24 @@
 #define PSDL_MAX_SURFACES 192
 #endif
 
-/* Full-screen buffers, which get their own pool rather than the arena. SDLPoP
- * wants two: the window surface and the offscreen buffer it draws into. */
+/*
+ * Full-screen buffers, which get their own pool rather than the arena. A client
+ * that draws into an offscreen buffer and flips wants two; one is enough for a
+ * client that composites straight into the window surface.
+ *
+ * 0 means picosdl allocates no canvas at all. SDL_CreateWindow() then fails,
+ * saying so, and the pool is not compiled in - which is what a client that owns
+ * its own framebuffer and calls PSDL_PresentBuffer() wants, since the pool would
+ * otherwise be dead memory. At depth 16 that is 128 KB of it.
+ *
+ * Each buffer is PSDL_SCREEN_W * PSDL_SCREEN_H * (PSDL_COLOR_DEPTH / 8) bytes.
+ */
 #ifndef PSDL_SCREEN_BUFFERS
 #define PSDL_SCREEN_BUFFERS 2
 #endif
+
+/* Bytes per pixel in this build's format, for sizing and for pitch arithmetic. */
+#define PSDL_BYTES_PER_PIXEL (PSDL_COLOR_DEPTH / 8)
 
 #ifndef PSDL_EVENT_QUEUE_LEN
 #define PSDL_EVENT_QUEUE_LEN 64
@@ -143,7 +156,8 @@ SDL_Surface *psdl_surface_alloc_header(void);
 
 /* Wrap a framebuffer that lives in .bss and outlives everything - no pool slot, no
  * arena, nothing to free. A backend uses it for buffers it owns itself. */
-SDL_Surface *psdl_surface_wrap_static(void *pixels, int w, int h, int pitch);
+SDL_Surface *psdl_surface_wrap_static(void *pixels, int w, int h, int pitch,
+                                      SDL_PixelFormat *format);
 void         psdl_surface_free_header(SDL_Surface *s);
 
 void         psdl_palette_init(void);
@@ -218,17 +232,6 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch);
 void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
                                      int x, int y, int w, int h);
 void psdl_backend_video_sync(void);
-
-#if PSDL_COLOR_DEPTH == 16
-/*
- * Push one RGB565 frame the client owns. `pitch` is in PIXELS, because a caller
- * holding a uint16_t* has that and not a byte count.
- *
- * Asynchronous like the 8bpp present: it waits for the previous transfer, starts
- * this one and returns, so the client's next frame overlaps the panel push.
- */
-void psdl_backend_video_present_rgb565(const Uint16 *pixels, int w, int h, int pitch);
-#endif
 void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors);
 
 /* Input. poll() is called from SDL_PumpEvents and should push whatever it has. */

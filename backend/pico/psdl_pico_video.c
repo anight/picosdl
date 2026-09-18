@@ -416,8 +416,11 @@ void psdl_backend_video_init(int w, int h)
 	if (clear != NULL)
 		dispDmaTransferWaitFinish(clear);
 
+	/* Always 8bpp, whatever the build depth: PSDL_FontDraw() and the blitters
+	 * write palette indices, and at depth 16 the result is expanded to RGB565 in
+	 * band_push() on its way out. */
 	s_band = psdl_surface_wrap_static(s_band_pixels, PSDL_PICO_PANEL_W, BAND_H,
-	                                  PSDL_PICO_PANEL_W);
+	                                  PSDL_PICO_PANEL_W, &psdl_pixel_format_index8);
 
 	printf("picosdl: display %dx%d, canvas %dx%d at y=%d\n",
 	       PSDL_PICO_PANEL_W, PSDL_PICO_PANEL_H, w, h, s_offset_y);
@@ -441,6 +444,45 @@ static void wait_for_panel(void)
 	s_xfer = NULL;
 }
 
+/*
+ * Hand a rectangle of a caller's buffer to the panel.
+ *
+ * One implementation for both depths. The difference is entirely in which driver
+ * entry point takes the data and what unit its stride is in - the 8bpp path goes
+ * through the CLUT expansion in the PIO, the 16bpp path is already what the panel
+ * wants - and neither touches a pixel on the CPU.
+ *
+ * `pitch` is in bytes here, as it is in SDL_Surface and in the public API;
+ * dispDrawBuffer16() wants pixels, so the 16bpp path divides.
+ */
+static struct dmaTransfer *push(const Uint8 *pixels, int pitch,
+                                int x, int y, int w, int h, int offset_y)
+{
+	struct Rect r = { (int16_t)x, (int16_t)(y + offset_y), (uint16_t)w, (uint16_t)h };
+	const Uint8 *origin = pixels + (size_t)y * pitch + (size_t)x * PSDL_BYTES_PER_PIXEL;
+
+#if PSDL_COLOR_DEPTH == 16
+	return dispDrawBuffer16((void *)(uintptr_t)origin, (uint32_t)(w * h), &r,
+	                        (uint16_t)(pitch / 2));
+#else
+	return dispDrawBuffer((void *)(uintptr_t)origin, (uint32_t)(w * h), &r,
+	                      (uint16_t)pitch);
+#endif
+}
+
+/*
+ * Where the canvas sits on the panel.
+ *
+ * Computed from the height being pushed rather than cached from init, because a
+ * client presenting its own buffer picks its own size and need not match the
+ * PSDL_SCREEN_H the backend was initialised with.
+ */
+static int letterbox_offset(int h)
+{
+	int offset_y = (PSDL_PICO_PANEL_H - h) / 2;
+	return offset_y < 0 ? 0 : offset_y;
+}
+
 void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
                                      int x, int y, int w, int h)
 {
@@ -449,9 +491,7 @@ void psdl_backend_video_present_rect(const Uint8 *pixels, int pitch,
 
 	wait_for_panel();
 
-	struct Rect r = { (int16_t)x, (int16_t)(y + s_offset_y), (uint16_t)w, (uint16_t)h };
-	s_xfer = dispDrawBuffer((void *)(uintptr_t)(pixels + (size_t)y * pitch + x),
-	                        (uint32_t)(w * h), &r, (uint16_t)pitch);
+	s_xfer = push(pixels, pitch, x, y, w, h, s_offset_y);
 
 #if PSDL_SCREEN_BUFFERS == 1
 	/*
@@ -473,57 +513,17 @@ void psdl_backend_video_present(const Uint8 *pixels, int w, int h, int pitch)
 	wait_for_panel();
 	++s_frames;
 
-
 	/* Bands before the canvas: they block, and doing them first leaves the canvas
 	 * transfer as the one still in flight, which is what overlaps with drawing. */
 	if (s_bands_on)
 		bands_tick();
 
-	struct Rect r = { 0, (int16_t)s_offset_y, (uint16_t)w, (uint16_t)h };
-	s_xfer = dispDrawBuffer((void *)(uintptr_t)pixels, (uint32_t)(w * h), &r,
-	                        (uint16_t)pitch);
+	s_xfer = push(pixels, pitch, 0, 0, w, h, letterbox_offset(h));
 
 #if PSDL_SCREEN_BUFFERS == 1
 	wait_for_panel();   /* see psdl_backend_video_present_rect */
 #endif
 }
-
-#if PSDL_COLOR_DEPTH == 16
-/*
- * Push a client-owned RGB565 frame.
- *
- * The same shape as the 8bpp present above - wait for the previous transfer,
- * start this one, return - and the same letterboxing, since the panel is 320x240
- * and the canvas is shorter whatever the depth. What it does not do is touch a
- * pixel: at this depth the buffer already holds what the panel wants, so the
- * whole frame is one DMA descriptor and the CPU is free the moment it is armed.
- *
- * `pitch` is in pixels; dispDrawBuffer16() takes it in the same unit.
- */
-void psdl_backend_video_present_rgb565(const Uint16 *pixels, int w, int h, int pitch)
-{
-	if (!s_ready)
-		return;
-
-	wait_for_panel();
-	++s_frames;
-
-	/* Bands before the canvas, for the ordering reason in the 8bpp present. */
-	if (s_bands_on)
-		bands_tick();
-
-	/* Centred from the height passed in rather than from s_offset_y. At this
-	 * depth the client owns its framebuffer and picks its own size, which need
-	 * not be the PSDL_SCREEN_H the backend was initialised with. */
-	int offset_y = (PSDL_PICO_PANEL_H - h) / 2;
-	if (offset_y < 0)
-		offset_y = 0;
-
-	struct Rect r = { 0, (int16_t)offset_y, (uint16_t)w, (uint16_t)h };
-	s_xfer = dispDrawBuffer16((void *)(uintptr_t)pixels, (uint32_t)(w * h), &r,
-	                          (uint16_t)pitch);
-}
-#endif
 
 void psdl_backend_video_sync(void)
 {

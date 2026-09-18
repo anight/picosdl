@@ -132,11 +132,20 @@ option(PICOSDL_INPUT_GAMEPAD     "I2C game controller (Adafruit Gamepad QT)" ON)
 #
 option(PICOSDL_AUDIO "I2S audio output (MAX98357A)" ON)
 
-# Full-screen buffers in the pool. 2 is the comfortable answer and the default;
-# 1 saves 62.5 KB and hands the job of holding the visible frame to the panel's
-# own memory, which costs the overlap between drawing and pushing - present has
-# to block until the push finishes, because the client is about to draw into the
-# buffer the DMA is reading. A client that wants 1 has to be written for it.
+# Full-screen buffers in the pool, and the axis that decides whether picosdl
+# allocates a canvas at all. Independent of the colour depth: what a pixel is and
+# who owns the memory are separate questions.
+#
+# 2 is the comfortable answer and the default. 1 hands the job of holding the
+# visible frame to the panel's own memory, which costs the overlap between drawing
+# and pushing - present has to block until the push finishes, because the client is
+# about to draw into the buffer the DMA is reading. A client that wants 1 has to be
+# written for it.
+#
+# 0 means the client owns its framebuffer and calls PSDL_PresentBuffer().
+# SDL_CreateWindow() then fails, saying so, and the pool is not compiled in - which
+# is the whole point, since it would otherwise be dead memory. At depth 16 that is
+# 128 KB of it.
 #
 # Colour depth, and the one option that changes the shape of the API.
 #
@@ -159,8 +168,8 @@ if (NOT PICOSDL_COLOR_DEPTH EQUAL 8 AND NOT PICOSDL_COLOR_DEPTH EQUAL 16)
 endif()
 message(STATUS "picosdl colour depth: ${PICOSDL_COLOR_DEPTH}bpp")
 
-set(PICOSDL_SCREEN_BUFFERS 2 CACHE STRING "Full-screen buffers in the pool (1 or 2)")
-set_property(CACHE PICOSDL_SCREEN_BUFFERS PROPERTY STRINGS 1 2)
+set(PICOSDL_SCREEN_BUFFERS 2 CACHE STRING "Full-screen buffers in the pool (0, 1 or 2)")
+set_property(CACHE PICOSDL_SCREEN_BUFFERS PROPERTY STRINGS 0 1 2)
 message(STATUS "picosdl screen buffers: ${PICOSDL_SCREEN_BUFFERS}")
 
 message(STATUS "picosdl inputs: BT keyboard=${PICOSDL_INPUT_BT_KEYBOARD} "
@@ -198,13 +207,19 @@ if (PICOSDL_AUDIO)
     # pico_generate_pio_header call. Its example and tests build only when it is
     # the top-level project, which it is not here.
     add_subdirectory(pio-i2s EXCLUDE_FROM_ALL)
-    # PUBLIC: the client's own code tests it too - a single-buffered client has to
-# know not to expect an offscreen surface of its own.
-target_compile_definitions(picosdl PUBLIC PSDL_SCREEN_BUFFERS=${PICOSDL_SCREEN_BUFFERS})
-
-target_link_libraries(picosdl PUBLIC pio-i2s-lib)
+    target_link_libraries(picosdl PUBLIC pio-i2s-lib)
     target_compile_definitions(picosdl PUBLIC PSDL_HAVE_AUDIO=1)
 endif()
+
+# PUBLIC because the client's own code tests it: a single-buffered client has to
+# know not to expect an offscreen surface of its own, and a client at 0 has to
+# know there is no window surface to ask for.
+#
+# Unconditional. This lived inside the audio block above, which meant a build with
+# audio off never defined it at all and silently fell back to the header's default
+# of 2 - so PICOSDL_SCREEN_BUFFERS was quietly ignored by exactly the builds most
+# likely to be short of memory.
+target_compile_definitions(picosdl PUBLIC PSDL_SCREEN_BUFFERS=${PICOSDL_SCREEN_BUFFERS})
 
 if (PICOSDL_INPUT_JOYSTICK)
     target_sources(picosdl PRIVATE backend/pico/joystick.c)
@@ -325,17 +340,21 @@ set_source_files_properties(
 # add_subdirectory().
 #
 #
-# Not at 16bpp, though. The demo is an 8bpp program - it opens a window, blits
-# sprites and animates the CLUT, and the first of those returns NULL at the other
-# depth. It exits cleanly saying so rather than crashing, but a binary whose whole
-# documented job is to be the first thing run on a new board should not be built
-# by default in a configuration where it quits immediately. Ask for it explicitly
-# if you want to watch it do that.
+# It needs two things this build might not have, and defaults off without either.
 #
-if (PICOSDL_STANDALONE AND PICOSDL_COLOR_DEPTH EQUAL 16)
-    set(PICOSDL_BUILD_DEMO_DEFAULT OFF)
+# An 8bpp canvas, because it animates the CLUT and blits indexed sprites - at
+# depth 16 those draw nonsense into an RGB565 buffer. And a canvas at all: at
+# PSDL_SCREEN_BUFFERS=0 there is none and SDL_CreateWindow() returns NULL.
+#
+# It exits cleanly saying so in either case rather than crashing, but a binary
+# whose whole documented job is to be the first thing run on a new board should
+# not be built by default in a configuration where it quits immediately. Ask for
+# it explicitly if you want to watch it do that.
+#
+if (PICOSDL_STANDALONE AND PICOSDL_COLOR_DEPTH EQUAL 8 AND PICOSDL_SCREEN_BUFFERS GREATER 0)
+    set(PICOSDL_BUILD_DEMO_DEFAULT ON)
 else()
-    set(PICOSDL_BUILD_DEMO_DEFAULT ${PICOSDL_STANDALONE})
+    set(PICOSDL_BUILD_DEMO_DEFAULT OFF)
 endif()
 
 option(PICOSDL_BUILD_DEMO "Build picosdl-demo (8bpp only)" ${PICOSDL_BUILD_DEMO_DEFAULT})

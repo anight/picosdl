@@ -32,9 +32,8 @@ The consequence worth naming: **the palette is the display hardware.**
 register writes rather than touching 64000 pixels, and a screen flash is one
 palette entry. Effects that would be prohibitive on this CPU become free.
 
-A build has one pixel format, but there are two builds. `PSDL_COLOR_DEPTH=16`
-serves a client that produces RGB565 itself, and it earns its place by *removing*
-this layer rather than adding a second one beside it — see
+A build has one pixel format, but there are two builds: `PSDL_COLOR_DEPTH=16`
+makes it RGB565, for a client that produces that directly — see
 [Direct colour](#direct-colour) below. The default is 8 and everything above is
 what that means.
 
@@ -192,61 +191,76 @@ nothing.
 ## Direct colour
 
 Everything above describes the 8bpp build, which is picosdl's reason for
-existing. `PSDL_COLOR_DEPTH=16` is for the client the indexed design does not
-suit, and it is worth being precise about which one that is.
+existing. `PSDL_COLOR_DEPTH=16` makes a pixel an RGB565 value instead of a
+palette index, and it is worth being precise about which client wants that.
 
 An indexed pipeline is a good deal when the art is already indexed: the palette
 becomes free effects, the blitter has one format to handle, and the PIO expands
-to RGB565 on the way out so the CPU never touches a pixel. A software 3D
-renderer inverts every term of that. It computes shading per pixel and produces
-RGB565 directly — which is what the panel wants anyway — so reaching an indexed
-panel means quantising a whole frame to 256 colours on the CPU, every frame. That
-costs the smooth shading the renderer exists to produce, and it costs the time
-twice over: once to quantise, and again because there is no palette left to stand
-in for the effects it made free.
+to RGB565 on the way out so the CPU never touches a pixel. A software 3D renderer
+inverts every term of that. It computes shading per pixel and produces RGB565
+directly — which is what the panel wants anyway — so reaching an indexed panel
+means quantising a whole frame to 256 colours on the CPU, every frame. That costs
+the smooth shading the renderer exists to produce, and it costs the time twice
+over: once to quantise, and again because there is no palette left to stand in for
+the effects it made free.
 
-So at 16 the indexed layer is not bridged, it is **removed**:
+What the depth changes is what a pixel **is**, and nothing else:
 
 | | 8 | 16 |
 |---|---|---|
-| `SDL_CreateWindow` | returns the canvas | fails, with an error saying why |
-| canvas | a 320x200 8bpp surface | none — the client owns its framebuffer |
-| present | `SDL_UpdateWindowSurface` | `PSDL_PresentRGB565` |
-| palette | the CLUT, written directly | not in the path |
-| blitters | all of them | none — nothing to blit into |
-| screen pool | 62.5 KB per buffer | not compiled in |
+| a pixel | a palette index | an RGB565 value |
+| `SDL_Surface::format` | `SDL_PIXELFORMAT_INDEX8` | `SDL_PIXELFORMAT_RGB565` |
+| palette | the CLUT, written directly | nothing to index |
+| blitters, `PSDL_Blit*` | operate on indices | index operations, so not useful |
+| screen buffer | 62.5 KB | 125 KB |
 
-Everything else is untouched and is the reason to still be here: input, events,
-timers, audio, the status bands and the serial console all behave identically.
+It does **not** decide whether picosdl allocates your canvas. That is
+`PSDL_SCREEN_BUFFERS`, and the two are independent — see below.
 
-A client is written for one depth or the other and finds out at compile time —
-`SDL_CreateWindow()` is absent in effect at 16, `PSDL_PresentRGB565()` is absent
-at 8. That is deliberate. A library that quietly handed back a surface in a
-format none of its own blitters could draw into would move the failure a long way
-from its cause.
+### Who owns the framebuffer
 
-The push is asynchronous, like the 8bpp one: `PSDL_PresentRGB565()` starts the
-transfer and returns, so the client's next frame overlaps it and the following
-call waits. A single-buffered client — which is the normal case here, since a
-full-screen RGB565 buffer is 128 KB — calls `PSDL_PresentSync()` before drawing
-into the buffer the DMA is still reading. `pitch` is in **pixels**, not bytes,
-because a caller holding a `uint16_t*` has that and not a byte count.
+Two ways to get a frame onto the panel, and both work at either depth:
 
 ```c
-static uint16_t framebuffer[320 * 200];      /* the client's own, 128 KB */
+/* picosdl owns the canvas - SDL's own model. Needs PSDL_SCREEN_BUFFERS >= 1. */
+SDL_Window  *win = SDL_CreateWindow(...);
+SDL_Surface *fb  = SDL_GetWindowSurface(win);
+draw_into(fb->pixels);
+SDL_UpdateWindowSurface(win);
 
-for (;;) {
-    PSDL_PresentSync();                       /* last frame has landed */
-    draw_into(framebuffer);                   /* whatever produces RGB565 */
-    PSDL_PresentRGB565(framebuffer, 320, 200, 320);
-}
+/* You own it. Build with PSDL_SCREEN_BUFFERS=0 and get the pool back. */
+static uint16_t fb[320 * 200];
+PSDL_PresentSync();                                   /* last frame has landed */
+draw_into(fb);
+PSDL_PresentBuffer(fb, 320, 200, 320 * sizeof *fb);   /* pitch in BYTES */
 ```
 
+A client with its own renderer already has a framebuffer and wants the second,
+whatever its pixel format. A client that wants somewhere to draw wants the first,
+whatever its pixel format. Conflating that with the depth would mean a 16bpp
+client could not ask picosdl for a buffer, and an 8bpp one could not bring its
+own, neither of which follows from anything about pixels.
+
+`PSDL_SCREEN_BUFFERS=0` is the only thing that removes `SDL_CreateWindow()`: with
+no pool there is no canvas to hand back, so it fails and says so. That is a
+coupling between a buffer count and a buffer, which is the honest kind.
+
+The push is asynchronous either way: it returns once the transfer has started, so
+the next frame overlaps it and the following present waits. A single-buffered
+client calls `PSDL_PresentSync()` before drawing into the buffer the DMA is still
+reading — which is what `PSDL_SCREEN_BUFFERS=1` means, and what a client owning
+one buffer of its own has to do too.
+
+Everything else is untouched and is the reason to still be here: input, events,
+timers, audio, the status bands and the serial console behave identically at both
+depths. The bands are drawn 8bpp through the font blitter whatever the build is,
+and expanded on the way out — at 16bpp that is *simpler*, because there is no
+client palette for them to collide with.
+
 The panel runs in RGB565 at both depths — 8bpp reaches it as RGB565 too, expanded
-through the CLUT on the way — so the depth changes the PIO and DMA wiring and
-nothing about the ST7789 itself. The driver is told which at `dispInit()` and it
-is fixed for the life of the program; a client knows at start-up which kind of
-pixels it draws, and one of the two paths is dead code for it.
+through the CLUT — so the depth changes the PIO and DMA wiring and nothing about
+the ST7789. The driver is told which at `dispInit()` and it is fixed for the life
+of the program.
 
 ## Layout
 
@@ -302,9 +316,9 @@ a single gain applied after everything is mixed; `PSDL_ReportMemory()`, which
 prints the high-water marks of all three regions; and `PSDL_DumpArena()`, which
 lists the arena entry by entry and is called automatically if the arena runs out.
 
-And on a 16bpp build only, `PSDL_PresentRGB565()` and `PSDL_PresentSync()` — the
-whole of the output path at that depth, since there is no window surface to
-update. See [Direct colour](#direct-colour).
+And `PSDL_PresentBuffer()` / `PSDL_PresentSync()`, which push a framebuffer the
+client owns rather than one picosdl allocated. Available at either colour depth;
+see [Who owns the framebuffer](#who-owns-the-framebuffer).
 
 ## Building
 
@@ -405,12 +419,14 @@ client is built for one value or the other and cannot be indifferent to it.
 cmake -S . -B build -DPICOSDL_COLOR_DEPTH=16
 ```
 
-8 is the default and is everything this README describes. 16 gives up the
-indexed layer — no window surface, no palette, no blitters — in exchange for
-handing an RGB565 framebuffer straight to the DMA. [Direct
-colour](#direct-colour) covers what that is for and what it costs; the short
-version is that it suits a client which already produces RGB565 and nothing
-else.
+8 is the default and is everything this README describes. 16 makes a pixel an
+RGB565 value, which suits a client that already produces those - anything with
+its own renderer. [Direct colour](#direct-colour) covers what it is for.
+
+It is independent of `PICOSDL_SCREEN_BUFFERS`, which is what decides whether
+picosdl allocates your canvas; a client may take one at either depth or bring its
+own at either depth. Set the buffer count to 0 to say you have your own and
+reclaim the pool.
 
 Anything other than 8 or 16 is refused at configure time rather than producing a
 build that half works.
@@ -641,9 +657,9 @@ upstream, and it is worth offering back.
 
 Static RAM, measured from a linked image:
 
-| | 8bpp | 16bpp |
+| | 8bpp, 2 buffers | 16bpp, 0 buffers |
 |---|---|---|
-| screen pool (2 × 320×200) | 128000 | — |
+| screen pool | 128000 | — |
 | LIFO arena | 16384 | 16384 |
 | surface headers (192) | 13056 | 13056 |
 | status band staging (8bpp) | 6400 | 6400 |
@@ -654,12 +670,13 @@ Static RAM, measured from a linked image:
 | arena stack | 768 | 768 |
 | **total** | **170240 (166.2 KB)** | **55040 (53.8 KB)** |
 
-The depth changes two rows and nothing else. The screen pool is what an 8bpp
-client draws into and does not exist at 16, where the client owns its own
-framebuffer — so the 115 KB the library gives back there is not a saving, it is
-the client's to spend, and a 320×200 RGB565 buffer is 128 KB of it. The second
-band buffer is the cost of keeping the status line at a depth where the PIO does
-not expand its pixels.
+Two rows move with the depth. The screen pool doubles, because each buffer is a
+frame of whatever a pixel now is — and it disappears entirely at
+`PSDL_SCREEN_BUFFERS=0`, which is the setting, not the depth, that says the client
+has its own. The figures above are for two buffers at 8bpp and none at 16, which
+is what each depth's typical client asks for; a 16bpp client that does want
+picosdl's canvas pays 125 KB a buffer for it. The second band buffer is the cost
+of keeping the status line at a depth where the PIO does not expand its pixels.
 
 All of it is tunable: `PSDL_SCREEN_BUFFERS`, `PSDL_ARENA_BYTES`,
 `PSDL_MAX_SURFACES`, `PSDL_EVENT_QUEUE_LEN` and `PSDL_AUDIO_BLOCK_FRAMES` are

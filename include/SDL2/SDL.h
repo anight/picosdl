@@ -90,8 +90,16 @@ typedef struct SDL_Palette {
 	int        refcount;
 } SDL_Palette;
 
-/* Only one format exists. The fields are here because callers read them. */
+/*
+ * Two formats exist here, and PSDL_COLOR_DEPTH picks which one a build uses:
+ * INDEX8 at depth 8, RGB565 at depth 16. The others are declared because callers
+ * name them; nothing in this library produces or consumes them.
+ *
+ * The values are SDL2's own, so a client that compares against its own headers or
+ * prints them gets what it expects.
+ */
 #define SDL_PIXELFORMAT_INDEX8   0x13000001u
+#define SDL_PIXELFORMAT_RGB565   0x15151002u
 #define SDL_PIXELFORMAT_RGB24    0x17101803u
 #define SDL_PIXELFORMAT_ARGB8888 0x16362004u
 
@@ -155,14 +163,24 @@ typedef struct SDL_Surface {
 } SDL_Surface;
 
 /*
- * The one and only pixel format, shared by every surface.
+ * The pixel formats, as shared objects rather than a copy per surface.
  *
- * It is a single shared object rather than a copy per surface for a concrete
- * reason: the game's sprites are `const SDL_Surface` objects generated into
- * flash, 673 of them, and an embedded SDL_PixelFormat would add 28 bytes to
- * each. It is also simply true - there is one format here, and one palette.
+ * Shared for a concrete reason: a client's sprites are `const SDL_Surface`
+ * objects generated into flash - hundreds of them - and an embedded
+ * SDL_PixelFormat would add 28 bytes to each.
+ *
+ * `psdl_pixel_format` is this build's format, which is what PSDL_COLOR_DEPTH
+ * selects and what SDL_CreateRGBSurface() and the window surface use.
+ *
+ * `psdl_pixel_format_index8` is always 8bpp indexed, whatever the build depth.
+ * At 8bpp it is the same object. At 16bpp it exists because the blitters and the
+ * font are defined on palette indices and remain useful on their own terms - the
+ * status bands draw through them into an 8bpp buffer and expand it on the way to
+ * the panel. A surface has to be able to say which of the two it is rather than
+ * inherit an assumption.
  */
 extern SDL_PixelFormat psdl_pixel_format;
+extern SDL_PixelFormat psdl_pixel_format_index8;
 
 typedef enum {
 	SDL_BLENDMODE_NONE  = 0x00000000,
@@ -622,37 +640,34 @@ SDL_RWops *SDL_RWFromFile(const char *file, const char *mode);
 #define    SDL_RWwrite(ctx, ptr, size, n) (ctx)->write(ctx, ptr, size, n)
 #define    SDL_RWclose(ctx) (ctx)->close(ctx)
 
-/* ------------------------------------------------------- direct colour */
+/* ------------------------------------------------------------ presenting */
 
 /*
- * Present an RGB565 frame, for a build made with PSDL_COLOR_DEPTH=16.
+ * Present a buffer the caller owns.
  *
- * picosdl is an 8bpp library: one global palette, one byte per pixel, expanded
- * to RGB565 by the PIO on its way to the panel. That suits a 2D game whose art
- * is already indexed, and it is why a full-screen fade here costs 256 register
- * writes instead of touching 64000 pixels.
+ * picosdl offers two ways to get a frame onto the panel, and which one you use
+ * is independent of the pixel format:
  *
- * A 3D software rasteriser is the case it does not suit. Those produce RGB565
- * directly - it is what the panel wants and what their blending arithmetic works
- * in - and making one fit the 8bpp path means quantising every frame to 256
- * colours on the CPU, which costs both the picture and the time.
+ *   - SDL_CreateWindow() + SDL_GetWindowSurface() + SDL_UpdateWindowSurface(),
+ *     where picosdl owns the canvas and hands it to you. This is SDL's own
+ *     model and needs PSDL_SCREEN_BUFFERS to be at least 1.
  *
- * So a build at PSDL_COLOR_DEPTH=16 drops the indexed layer entirely rather than
- * bridging it. There is no window surface, no palette and no blitter; the client
- * owns its framebuffer and hands it over here, and the DMA takes it to the panel
- * without the CPU touching a pixel. Everything else picosdl does - input, events,
- * timers, audio - is unchanged, and is the reason to still be using it.
+ *   - PSDL_PresentBuffer(), where you own the memory and picosdl only pushes it.
+ *     A client that already has a framebuffer - anything with its own renderer -
+ *     wants this, and can then build with PSDL_SCREEN_BUFFERS=0 and get the
+ *     whole pool back.
  *
- * `pitch` is in PIXELS, not bytes, which is what a caller holding a uint16_t*
- * already has. The push is asynchronous: this returns once the transfer has
- * started, so the client's next frame overlaps it, and the following call waits.
- * Call PSDL_PresentSync() when you need the frame to have landed - before
- * redrawing into the same buffer, in a single-buffered client.
+ * Both work at either PSDL_COLOR_DEPTH. The depth says what a pixel *is*; it has
+ * nothing to do with who allocates it.
  *
- * Both are absent from an 8bpp build; SDL_CreateWindow() is absent from a 16bpp
- * one. A client is one or the other, and finds out at compile time.
+ * `pixels` must be in this build's format - 8bpp indices, or RGB565 at depth 16 -
+ * and `pitch` is in BYTES, as everywhere else in SDL. The push is asynchronous:
+ * it returns once the transfer has started, so the next frame overlaps it and the
+ * following present waits. Call PSDL_PresentSync() when you need the frame to
+ * have landed, which a single-buffered client must do before drawing into the
+ * buffer the DMA is still reading.
  */
-void     PSDL_PresentRGB565(const Uint16 *pixels, int w, int h, int pitch);
+void     PSDL_PresentBuffer(const void *pixels, int w, int h, int pitch);
 void     PSDL_PresentSync(void);
 
 /* ---------------------------------------------------------- diagnostics */

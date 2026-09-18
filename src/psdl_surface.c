@@ -55,12 +55,13 @@ static int           s_arena_depth;
  * the arena would mean sizing the arena for them and wasting it the rest of the
  * time. They also outlive everything, so they never want reclaiming.
  *
- * Not compiled in at PSDL_COLOR_DEPTH 16: there is no 8bpp canvas then, the
- * client presents its own RGB565 buffer, and this would be 128 KB of memory
- * nothing can ask for.
+ * Sized by the build's pixel format, and not compiled in at all when
+ * PSDL_SCREEN_BUFFERS is 0 - which is how a client that owns its own framebuffer
+ * says so, and gets the memory back.
  */
-#define PSDL_SCREEN_BYTES ((size_t)PSDL_SCREEN_W * (size_t)PSDL_SCREEN_H)
-#if PSDL_COLOR_DEPTH == 8
+#define PSDL_SCREEN_BYTES \
+	((size_t)PSDL_SCREEN_W * (size_t)PSDL_SCREEN_H * PSDL_BYTES_PER_PIXEL)
+#if PSDL_SCREEN_BUFFERS > 0
 static Uint8 s_screen_pool[PSDL_SCREEN_BUFFERS][PSDL_SCREEN_BYTES] __attribute__((aligned(4)));
 static Uint8 s_screen_pool_used[PSDL_SCREEN_BUFFERS];
 #endif
@@ -75,11 +76,16 @@ void psdl_surface_init(void)
 	s_headers_in_use = 0;
 	s_arena_top = 0;
 	s_arena_depth = 0;
-#if PSDL_COLOR_DEPTH == 8
+#if PSDL_SCREEN_BUFFERS > 0
 	memset(s_screen_pool_used, 0, sizeof(s_screen_pool_used));
 #endif
 
+	/* The palette belongs to the indexed format. At depth 8 that is also the
+	 * build's format; at 16 the build's format has no palette and keeps NULL. */
+	psdl_pixel_format_index8.palette = PSDL_GlobalPalette();
+#if PSDL_COLOR_DEPTH == 8
 	psdl_pixel_format.palette = PSDL_GlobalPalette();
+#endif
 }
 
 SDL_Surface *psdl_surface_alloc_header(void)
@@ -104,17 +110,44 @@ void psdl_surface_free_header(SDL_Surface *s)
 
 /* -------------------------------------------------------------- plumbing */
 
-/* The single shared format. Generated flash surfaces point at this too. */
+/*
+ * The shared formats. Generated flash surfaces point at one of these too.
+ *
+ * Two objects at both depths rather than an alias at depth 8, where they describe
+ * the same thing. The 28 duplicated bytes buy uniform code and no preprocessor
+ * trick that a translation unit could see differently. At depth 16 they genuinely
+ * differ: the build's format is RGB565, and index8 stays available for the paths
+ * that are about indices - the font and the blitters - which the status bands use
+ * at either depth.
+ */
 SDL_PixelFormat psdl_pixel_format = {
+#if PSDL_COLOR_DEPTH == 8
+	.format        = SDL_PIXELFORMAT_INDEX8,
+	.palette       = NULL,          /* filled in by psdl_surface_init */
+	.BitsPerPixel  = 8,
+	.BytesPerPixel = 1,
+#else
+	.format        = SDL_PIXELFORMAT_RGB565,
+	.palette       = NULL,          /* RGB565 indexes nothing */
+	.BitsPerPixel  = 16,
+	.BytesPerPixel = 2,
+	.Rmask         = 0xF800,
+	.Gmask         = 0x07E0,
+	.Bmask         = 0x001F,
+#endif
+};
+
+SDL_PixelFormat psdl_pixel_format_index8 = {
 	.format        = SDL_PIXELFORMAT_INDEX8,
 	.palette       = NULL,          /* filled in by psdl_surface_init */
 	.BitsPerPixel  = 8,
 	.BytesPerPixel = 1,
 };
 
-static void surface_finish(SDL_Surface *s, void *pixels, int w, int h, int pitch, Uint32 region)
+static void surface_finish(SDL_Surface *s, void *pixels, int w, int h, int pitch,
+                           Uint32 region, SDL_PixelFormat *format)
 {
-	s->format       = &psdl_pixel_format;
+	s->format       = format;
 	s->flags        = region;
 	s->w            = w;
 	s->h            = h;
@@ -132,11 +165,14 @@ static void surface_finish(SDL_Surface *s, void *pixels, int w, int h, int pitch
 	s->clip_rect.h  = h;
 }
 
-/* Wrap a framebuffer that lives in .bss and outlives everything. */
-SDL_Surface *psdl_surface_wrap_static(void *pixels, int w, int h, int pitch)
+/* Wrap a framebuffer that lives in .bss and outlives everything. The caller says
+ * what format it is in, because a backend may own buffers in either - the status
+ * bands keep an 8bpp one whatever the build depth. */
+SDL_Surface *psdl_surface_wrap_static(void *pixels, int w, int h, int pitch,
+                                      SDL_PixelFormat *format)
 {
 	SDL_Surface *s = psdl_surface_alloc_header();
-	surface_finish(s, pixels, w, h, pitch, PSDL_SURF_STATIC);
+	surface_finish(s, pixels, w, h, pitch, PSDL_SURF_STATIC, format);
 	return s;
 }
 
@@ -153,7 +189,7 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
 	}
 
 	/* A request for exactly the screen size comes from the dedicated pool. */
-#if PSDL_COLOR_DEPTH == 8
+#if PSDL_SCREEN_BUFFERS > 0
 	if (width == PSDL_SCREEN_W && height == PSDL_SCREEN_H) {
 		for (int i = 0; i < PSDL_SCREEN_BUFFERS; ++i) {
 			if (s_screen_pool_used[i])
@@ -161,8 +197,9 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
 			s_screen_pool_used[i] = 1;
 			memset(s_screen_pool[i], 0, PSDL_SCREEN_BYTES);
 			SDL_Surface *s = psdl_surface_alloc_header();
-			surface_finish(s, s_screen_pool[i], width, height, PSDL_SCREEN_W,
-			               PSDL_SURF_STATIC);
+			surface_finish(s, s_screen_pool[i], width, height,
+			               PSDL_SCREEN_W * PSDL_BYTES_PER_PIXEL,
+			               PSDL_SURF_STATIC, &psdl_pixel_format);
 			s->pool_slot = i + 1;
 			return s;
 		}
@@ -171,8 +208,8 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
 	}
 #endif
 
-	/* Everything is 8bpp; pitch is rounded up so rows stay word-aligned. */
-	int    pitch = (width + 3) & ~3;
+	/* Pitch is in bytes and rounded up so rows stay word-aligned. */
+	int    pitch = (width * PSDL_BYTES_PER_PIXEL + 3) & ~3;
 	size_t bytes = (size_t)pitch * (size_t)height;
 
 	PSDL_ASSERT(s_arena_depth < PSDL_ARENA_MAX_ENTRIES, "arena entry stack full");
@@ -194,7 +231,8 @@ SDL_Surface *SDL_CreateRGBSurface(Uint32 flags, int width, int height, int depth
 	memset(pixels, 0, bytes);
 
 	SDL_Surface *s = psdl_surface_alloc_header();
-	surface_finish(s, pixels, width, height, pitch, PSDL_SURF_ARENA);
+	surface_finish(s, pixels, width, height, pitch, PSDL_SURF_ARENA,
+	               &psdl_pixel_format);
 
 	s_arena_stack[s_arena_depth].surface = s;
 	s_arena_stack[s_arena_depth].base    = base;
@@ -209,7 +247,9 @@ SDL_Surface *SDL_CreateRGBSurfaceFrom(void *pixels, int width, int height, int d
 {
 	(void)depth; (void)Rmask; (void)Gmask; (void)Bmask; (void)Amask;
 	SDL_Surface *s = psdl_surface_alloc_header();
-	surface_finish(s, pixels, width, height, pitch ? pitch : width, PSDL_SURF_EXTERN);
+	surface_finish(s, pixels, width, height,
+	               pitch ? pitch : width * PSDL_BYTES_PER_PIXEL,
+	               PSDL_SURF_EXTERN, &psdl_pixel_format);
 	return s;
 }
 
@@ -231,7 +271,7 @@ void SDL_FreeSurface(SDL_Surface *surface)
 	if (--surface->refcount > 0)
 		return;
 
-#if PSDL_COLOR_DEPTH == 8
+#if PSDL_SCREEN_BUFFERS > 0
 	if (surface->pool_slot > 0) {
 		s_screen_pool_used[surface->pool_slot - 1] = 0;
 	} else
@@ -419,7 +459,7 @@ void PSDL_DumpArena(void)
 void PSDL_ReportMemory(void)
 {
 	int screens = 0;
-#if PSDL_COLOR_DEPTH == 8
+#if PSDL_SCREEN_BUFFERS > 0
 	for (int i = 0; i < PSDL_SCREEN_BUFFERS; ++i)
 		screens += s_screen_pool_used[i];
 #endif

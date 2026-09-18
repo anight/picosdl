@@ -38,23 +38,24 @@ SDL_Window *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint
 
 	psdl_video_init();
 
-#if PSDL_COLOR_DEPTH == 16
+#if PSDL_SCREEN_BUFFERS == 0
 	/*
-	 * No canvas at 16bpp. Every surface and blitter here is 8bpp, so a window
-	 * surface would be a buffer in a format nothing in this library can draw
-	 * into - and the client at this depth has its own RGB565 framebuffer
-	 * already, which is the point. Fail where the mistake is, rather than
-	 * returning something that misbehaves later.
+	 * This build allocates no canvas, so there is none to hand back. That is
+	 * PSDL_SCREEN_BUFFERS=0, which a client sets when it owns its framebuffer
+	 * and presents with PSDL_PresentBuffer() - the pool would otherwise be dead
+	 * memory. Nothing to do with the pixel format: a client at either depth may
+	 * take picosdl's canvas or bring its own.
 	 */
 	(void)flags;
-	SDL_SetError("picosdl: no window surface at PSDL_COLOR_DEPTH 16 - "
-	             "present your own RGB565 buffer with PSDL_PresentRGB565()");
+	SDL_SetError("picosdl: this build has PSDL_SCREEN_BUFFERS=0 and allocates no "
+	             "canvas - present your own buffer with PSDL_PresentBuffer()");
 	return NULL;
 #else
 	if (s_window.in_use)
 		return &s_window;
 
-	s_window.surface = SDL_CreateRGBSurface(0, PSDL_SCREEN_W, PSDL_SCREEN_H, 8, 0, 0, 0, 0);
+	s_window.surface = SDL_CreateRGBSurface(0, PSDL_SCREEN_W, PSDL_SCREEN_H,
+	                                        PSDL_COLOR_DEPTH, 0, 0, 0, 0);
 	PSDL_ASSERT(s_window.surface != NULL, "could not create the window surface");
 
 	s_window.w      = PSDL_SCREEN_W;
@@ -65,31 +66,27 @@ SDL_Window *SDL_CreateWindow(const char *title, int x, int y, int w, int h, Uint
 #endif
 }
 
-#if PSDL_COLOR_DEPTH == 16
 /*
- * Present an RGB565 frame the client owns.
+ * Present a buffer the caller owns, in this build's pixel format.
  *
- * This is the whole of the 16bpp output path. There is no window, no surface and
- * no palette in it: the buffer already holds what the panel wants, so it goes
- * straight to the backend and from there to the DMA. `pitch` is in pixels.
+ * The counterpart to SDL_UpdateWindowSurface() for a client that allocates its
+ * own framebuffer, and the same code underneath - the backend present takes a
+ * pointer, a size and a byte pitch and does not care where the memory came from.
  *
- * Asynchronous, like SDL_UpdateWindowSurface: it returns once the transfer is
- * started, and the next call waits for it. A client that wants the frame to have
- * landed - because it is about to draw into the same buffer - calls
- * PSDL_PresentSync() after it.
+ * Available at either depth, because who owns the buffer and what a pixel is are
+ * separate questions.
  */
-void PSDL_PresentRGB565(const Uint16 *pixels, int w, int h, int pitch)
+void PSDL_PresentBuffer(const void *pixels, int w, int h, int pitch)
 {
 	if (pixels == NULL || w <= 0 || h <= 0)
 		return;
-	psdl_backend_video_present_rgb565(pixels, w, h, pitch);
+	psdl_backend_video_present((const Uint8 *)pixels, w, h, pitch);
 }
 
 void PSDL_PresentSync(void)
 {
 	psdl_backend_video_sync();
 }
-#endif
 
 void SDL_DestroyWindow(SDL_Window *window)
 {
