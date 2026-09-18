@@ -485,6 +485,11 @@ cmake -S . -B build && cmake --build build
 ./picodev.sh flash-and-logs build/picosdl-demo.elf
 ```
 
+That second line wants a debug probe on the board's SWD pins - a Raspberry Pi
+Debugprobe, or another Pico running the debugprobe firmware. The demo builds no
+`.uf2`, so there is no BOOTSEL-and-copy route for it; a client that produces one
+can of course be flashed that way instead.
+
 It links this library and nothing else, so it is also the shortest complete example
 of using it. `T` is worth knowing about: a steady test tone replacing everything
 else, which bisects an audio fault into "the clocking, the DMA chain and the DAC"
@@ -496,7 +501,12 @@ turns it back on, which is worth doing while bringing a board up.
 
 ### Flashing and the console
 
-`picodev.sh` drives a board over SWD with a CMSIS-DAP probe, on either part:
+`picodev.sh` drives a board over SWD with a CMSIS-DAP probe - a Debugprobe or a
+second Pico running its firmware - on either part. It is not the only way to get
+an image onto a board, and not the simplest: a `.uf2` goes on over USB with
+BOOTSEL held and no extra hardware at all. What a probe buys is everything
+around programming - no button to hold, the audio silenced first, a reset, and
+the console from its first line:
 
 ```bash
 ./picodev.sh flash [firmware.elf]   # program and reset
