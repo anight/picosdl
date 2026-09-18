@@ -2,27 +2,19 @@
 #
 # Program, reset and watch a board over SWD.
 #
-# The first argument says which part is on the other end of the probe, and there
-# is no default: --rp2040 or --rp2350.
+#   ./picodev.sh flash [firmware.elf]   program and reset
+#   ./picodev.sh reset                  reset the board, program nothing
+#   ./picodev.sh halt                   stop the cores and silence the audio
+#   ./picodev.sh logs                   watch the console (tail -f, in effect)
+#   ./picodev.sh flash-and-logs [fw]    program, reset, then watch the console
 #
-#   ./picodev.sh CHIP flash [firmware.elf]   program and reset
-#   ./picodev.sh CHIP reset                  reset the board, program nothing
-#   ./picodev.sh CHIP halt                   stop the cores and silence the audio
-#   ./picodev.sh CHIP logs                   watch the console (tail -f, in effect)
-#   ./picodev.sh CHIP flash-and-logs [fw]    program, reset, then watch the console
+# The part is worked out from the probe. Put --rp2040 or --rp2350 first to say so
+# explicitly instead - needed only if the detection cannot place what it finds.
 #
-# e.g. ./picodev.sh --rp2350 flash build/picopop.elf
-#
-# A bare path is still accepted, so `./picodev.sh --rp2350 build/picopop.elf` means
-# the same as `... --rp2350 flash build/picopop.elf`. With no arguments at all it
-# prints this and does nothing: it used to flash a default image, which is too much
-# to do on an empty command line now that there are commands that do not touch the
-# flash.
-#
-# Why the chip is not guessed. It could be read off the probe, but every wrong
-# answer is bad in a different way: the wrong target config fails to attach, and
-# the wrong DMA abort address is a write to whatever the other part keeps there.
-# Naming it costs one word and removes the question.
+# A bare path is still accepted, so `./picodev.sh build/picopop.elf` means the same
+# as `./picodev.sh flash build/picopop.elf`. With no arguments at all it prints this
+# and does nothing: it used to flash a default image, which is too much to do on
+# an empty command line now that there are commands that do not touch the flash.
 #
 # Environment:
 #   OPENOCD           override the OpenOCD binary
@@ -36,48 +28,25 @@ DEFAULT_FIRMWARE=./build/picosdl-demo.elf
 BAUD="${PICOPOP_BAUD:-115200}"
 
 usage() {
-	sed -n '3,20p' "$0" | sed 's/^#\{1,2\} \{0,1\}//'
+	sed -n '3,16p' "$0" | sed 's/^#\{1,2\} \{0,1\}//'
 	exit "${1:-1}"
 }
 
 # --------------------------------------------------------------------- chip
 
 #
-# Three things differ between the parts, and nothing else does:
+# An explicit --rp2040 / --rp2350 wins; otherwise the part is detected below,
+# once the OpenOCD binary has been picked and only when a probe is actually
+# needed. `logs` never touches the probe and must keep working with none
+# attached, so detection cannot happen here.
 #
-#   the OpenOCD target config
-#   the names the two cores answer to - RP2040 numbers them, RP2350 names them
-#     by architecture because it also has RISC-V cores at rv0/rv1
-#   DMA_CHAN_ABORT, which moved when RP2350 grew from 12 channels to 16
-#
-# PIO0_BASE, PIO1_BASE and the PIO CTRL offset are identical on both, which is
-# why the silence sequence below carries only one address as a variable.
-#
+CHIP=""
 case "${1:-}" in
---rp2040)
-	TARGET_CFG=target/rp2040.cfg
-	CORE0=rp2040.core0
-	CORE1=rp2040.core1
-	DMA_CHAN_ABORT=0x50000444
-	;;
---rp2350)
-	TARGET_CFG=target/rp2350.cfg
-	CORE0=rp2350.cm0
-	CORE1=rp2350.cm1
-	DMA_CHAN_ABORT=0x50000464
-	;;
--h|--help|help)
-	usage 0
-	;;
-"")
-	usage 1
-	;;
-*)
-	echo "$0: first argument must be --rp2040 or --rp2350, not '$1'" >&2
-	usage 1
+--rp2040|--rp2350)
+	CHIP="${1#--}"
+	shift
 	;;
 esac
-shift
 
 # ------------------------------------------------------------------ OpenOCD
 
@@ -144,7 +113,8 @@ fi
 # Wrapped in catch so a probe that cannot do this still flashes: being unable
 # to silence the board is a nuisance, not a reason to refuse to program it.
 #
-SILENCE=$(cat <<TCL
+silence_tcl() {
+	cat <<TCL
 proc picopop_silence {} {
 	# Halting is best-effort: the register writes are what matter, and they
 	# work whether or not the cores stopped cleanly. Selecting a core is
@@ -161,15 +131,107 @@ if { [catch { picopop_silence } msg] } {
 	echo "picopop: could not silence the board first (\$msg) - flashing anyway"
 }
 TCL
-)
+}
+
+#
+# Work out which part is on the other end, by asking the debug port and nobody
+# else.
+#
+# OpenOCD will bring up SWD and read DPIDR with no target config at all - it
+# then says "gdb services need one or more targets defined" and exits, which is
+# fine, because the line we want has already been printed. That is what makes
+# this safe to do first: no target is selected, nothing is halted, and no memory
+# is touched, so a detection against the wrong guess is impossible rather than
+# merely unlikely.
+#
+# The top nibble of DPIDR is the revision, so it is masked off before comparing:
+# a new stepping of either part would otherwise stop being recognised.
+#
+#   0x0c013477   RP2350 - measured, on a Pico 2 W over a Debugprobe
+#   0x0bc12477   RP2040 - from the datasheet, not measured here
+#
+# If the RP2040 constant is wrong the cost is small and visible: an RP2040 lands
+# in the "could not place it" branch below and asks for --rp2040, rather than
+# being mistaken for something else. Nothing acts on a guess.
+#
+detect_chip() {
+	local out dpidr
+	out=$("$OPENOCD" "${OPENOCD_ARGS[@]}" \
+		-f interface/cmsis-dap.cfg \
+		"${PROBE_ARGS[@]}" \
+		-c "transport select swd" \
+		-c "adapter speed 1000" \
+		-c "swd newdap probe cpu -expected-id 0" \
+		-c "dap create probe.dap -chain-position probe.cpu" \
+		-c "init" -c "exit" 2>&1) || true
+
+	dpidr=$(printf '%s\n' "$out" |
+		sed -n 's/.*SWD DPIDR \(0x[0-9a-fA-F]*\).*/\1/p' | tail -1)
+
+	if [ -z "$dpidr" ]; then
+		echo "$0: no debug port answered - is a probe attached and powered?" >&2
+		printf '%s\n' "$out" | sed -n '/Error\|error/p' | head -3 >&2
+		exit 1
+	fi
+
+	case $(( dpidr & 0x0fffffff )) in
+	$(( 0x0c013477 ))) echo rp2350 ;;
+	$(( 0x0bc12477 ))) echo rp2040 ;;
+	*)
+		echo "$0: debug port $dpidr is not one this knows" >&2
+		echo "  pass --rp2040 or --rp2350 to say which part it is" >&2
+		exit 1
+		;;
+	esac
+}
+
+#
+# Everything downstream of knowing the chip. Three things differ between the
+# parts and nothing else does:
+#
+#   the OpenOCD target config
+#   the names the two cores answer to - RP2040 numbers them, RP2350 names them
+#     by architecture because it also has RISC-V cores at rv0/rv1
+#   DMA_CHAN_ABORT, which moved when RP2350 grew from 12 channels to 16
+#
+# PIO0_BASE, PIO1_BASE and the PIO CTRL offset are identical on both, which is
+# why the silence sequence carries only the one address.
+#
+chip_resolve() {
+	[ -n "$TARGET_CFG" ] && return 0        # already done
+
+	PROBE_ARGS=()
+	[ -n "$PROBE_SERIAL" ] && PROBE_ARGS=(-c "cmsis_dap_serial $PROBE_SERIAL")
+
+	if [ -z "$CHIP" ]; then
+		CHIP=$(detect_chip)
+		echo "picodev: detected $CHIP" >&2
+	fi
+
+	case "$CHIP" in
+	rp2040)
+		TARGET_CFG=target/rp2040.cfg
+		CORE0=rp2040.core0
+		CORE1=rp2040.core1
+		DMA_CHAN_ABORT=0x50000444
+		;;
+	rp2350)
+		TARGET_CFG=target/rp2350.cfg
+		CORE0=rp2350.cm0
+		CORE1=rp2350.cm1
+		DMA_CHAN_ABORT=0x50000464
+		;;
+	esac
+
+	SILENCE=$(silence_tcl)
+}
 
 # Run OpenOCD with the silence sequence, then whatever commands follow.
 openocd_run() {
-	local extra=()
-	[ -n "$PROBE_SERIAL" ] && extra+=(-c "cmsis_dap_serial $PROBE_SERIAL")
+	chip_resolve
 	"$OPENOCD" "${OPENOCD_ARGS[@]}" \
 		-f interface/cmsis-dap.cfg -f "$TARGET_CFG" \
-		"${extra[@]}" \
+		"${PROBE_ARGS[@]}" \
 		-c "adapter speed 5000" \
 		-c "init" \
 		-c "$SILENCE" \

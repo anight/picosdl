@@ -482,7 +482,7 @@ screen while doing it.
 
 ```bash
 cmake -S . -B build && cmake --build build
-./picodev.sh --rp2350 flash-and-logs build/picosdl-demo.elf
+./picodev.sh flash-and-logs build/picosdl-demo.elf
 ```
 
 It links this library and nothing else, so it is also the shortest complete example
@@ -496,25 +496,31 @@ turns it back on, which is worth doing while bringing a board up.
 
 ### Flashing and the console
 
-`picodev.sh` drives a board over SWD with a CMSIS-DAP probe. The first argument
-says which part is on the other end, `--rp2040` or `--rp2350`, and there is no
-default:
+`picodev.sh` drives a board over SWD with a CMSIS-DAP probe, on either part:
 
 ```bash
-./picodev.sh CHIP flash [firmware.elf]   # program and reset
-./picodev.sh CHIP reset                  # reset, program nothing
-./picodev.sh CHIP halt                   # stop the cores and silence the audio
-./picodev.sh CHIP logs                   # watch the console (tail -f, in effect)
-./picodev.sh CHIP flash-and-logs [fw]    # program, reset, then watch from line one
+./picodev.sh flash [firmware.elf]   # program and reset
+./picodev.sh reset                  # reset, program nothing
+./picodev.sh halt                   # stop the cores and silence the audio
+./picodev.sh logs                   # watch the console (tail -f, in effect)
+./picodev.sh flash-and-logs [fw]    # program, reset, then watch from the first line
 ```
 
-Three things differ between the parts and nothing else does: the OpenOCD target
-config, the names the cores answer to (`rp2040.core0` against `rp2350.cm0` - the
-RP2350 names them by architecture because it also has RISC-V cores), and the DMA
-`CHAN_ABORT` address, which moved when the channel count went from 12 to 16. The
-chip is not guessed from the probe because each wrong answer fails differently:
-the wrong target config will not attach, and the wrong abort address is a write to
-whatever the other part keeps there.
+**Which part it is, is worked out rather than declared.** Three things differ
+between them and nothing else does: the OpenOCD target config, the names the cores
+answer to (`rp2040.core0` against `rp2350.cm0` - the RP2350 names them by
+architecture because it also has RISC-V cores), and the DMA `CHAN_ABORT` address,
+which moved when the channel count went from 12 to 16.
+
+The answer comes from DPIDR, which OpenOCD will read with no target config at all:
+it brings up SWD, prints the value, complains that no targets are defined and
+exits. Nothing is selected, halted or read, so the detection itself cannot be
+performed against the wrong guess. The revision nibble is masked off before
+comparing, so a new stepping of either part still places.
+
+A DPIDR it cannot place is an error naming the value, never a default - pass
+`--rp2040` or `--rp2350` first to settle it by hand. That is also the escape hatch
+if a part turns up whose ID is not in the two the script knows.
 
 `halt` stops both cores and leaves them stopped; `reset` starts the board again.
 Both cores matters - halting core 0 alone leaves a mixer running on core 1 - and so
@@ -526,7 +532,7 @@ command here does before anything else.
 `flash-and-logs` attaches the console reader *before* programming, because a
 reader started afterwards has already missed the start-up banner, and drains the
 port first so the log does not open with leftovers from the previous run. Only the
-board's output goes to stdout, so `./picodev.sh CHIP flash-and-logs | tee boot.log`
+board's output goes to stdout, so `./picodev.sh flash-and-logs | tee boot.log`
 captures just that.
 
 It refuses to read a console another process already has open. Two readers on one
