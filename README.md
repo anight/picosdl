@@ -1,7 +1,7 @@
 # picosdl
 
-A small subset of SDL2 for the RP2350, with a real backend: an ST7789 panel, an
-I2S DAC, a Bluetooth HID keyboard and an analog stick.
+A small subset of SDL2 for the RP2040 and RP2350, with a real backend: an ST7789
+panel, an I2S DAC, a Bluetooth HID keyboard and an analog stick.
 
 It exists so that a game written against the SDL2 API can be built for a
 microcontroller without being rewritten. It is not a port of SDL — it implements
@@ -118,9 +118,9 @@ cores, and the footer carries whatever `PSDL_SetFooterText()` was given, centred
 
 Colours are RGB, not palette indices, and that is the point: the bands are
 picosdl's overlay rather than part of the client's indexed world, so they keep
-the colours asked for whatever the client does to its palette. An earlier version
-took indices and the letterbox turned red every time the client flashed the
-screen by rewriting entry 0.
+the colours asked for whatever the client does to its palette. Indices would tie
+them to it — a client that flashes the screen by rewriting entry 0 would flash
+the letterbox with it.
 
 They work at both depths. At 16bpp they are *simpler*: the band is drawn 8bpp
 through the font blitter exactly as below and expanded to RGB565 on the way out,
@@ -202,7 +202,7 @@ renderer inverts every term of that. It computes shading per pixel and produces
 RGB565 directly — which is what the panel wants anyway — so reaching an indexed
 panel means quantising a whole frame to 256 colours on the CPU, every frame. That
 costs the smooth shading the renderer exists to produce, and it costs the time
-twice over: once to quantise, and again because the palette can no longer stand
+twice over: once to quantise, and again because there is no palette left to stand
 in for the effects it made free.
 
 So at 16 the indexed layer is not bridged, it is **removed**:
@@ -373,39 +373,22 @@ twice over — the BLE and Classic stacks, because a keyboard may be either and 
 cannot tell from the outside — plus the CYW43 driver and that chip's firmware blob.
 The blob alone is 234 KB of flash and is not code, so nothing else can shrink it.
 
-*Measured* on one client's firmware. All sixteen combinations build clean, with no
-warnings — the corners as much as the middle:
-
-| audio | BT | joystick | gamepad | `.text` | `.bss` |
-|---|---|---|---|---|---|
-| on | on | on | on | 1,939,952 | 357,020 |
-| on | on | on | off | 1,937,320 | 357,012 |
-| on | on | off | on | 1,938,184 | 356,988 |
-| on | on | off | off | 1,935,240 | 356,948 |
-| on | **off** | on | on | **1,508,712** | **334,840** |
-| on | off | on | off | 1,506,080 | 334,832 |
-| on | off | off | on | 1,506,936 | 334,804 |
-| on | off | off | off | 1,504,016 | 334,768 |
-| **off** | on | on | on | 1,936,824 | **351,812** |
-| off | on | on | off | 1,934,192 | 351,800 |
-| off | on | off | on | 1,935,048 | 351,776 |
-| off | on | off | off | 1,932,120 | 351,740 |
-| off | off | on | on | 1,505,200 | 329,600 |
-| off | off | on | off | 1,502,576 | 329,592 |
-| off | off | off | on | 1,503,432 | 329,568 |
-| **off** | **off** | **off** | **off** | **1,500,504** | **329,532** |
-
-Roughly, against everything on:
+Measured on `picosdl-demo` itself — this library and nothing else — for
+`pico2_w` at 8bpp. Everything on is 506,804 bytes of `.text` and 211,336 of
+`.bss`; each row is what turning that one option off gives back:
 
 | off | flash | RAM |
 |---|---|---|
-| Bluetooth | **431 KB** | **22 KB** |
-| audio | 3.1 KB | 5.2 KB |
-| joystick | 1.8 KB | 32 B |
-| gamepad | 2.6 KB | 8 B |
+| Bluetooth | **430,864 B (420.8 KB)** | **22,164 B (21.6 KB)** |
+| audio | 4,376 B (4.3 KB) | 5,252 B (5.1 KB) |
+| joystick | 1,784 B (1.7 KB) | 28 B |
+| gamepad | 2,648 B (2.6 KB) | 16 B |
 
-If you are short of space there is only one of these worth switching off. The other
-three are about having the hardware, not about size.
+If you are short of space there is only one of these worth switching off. With
+Bluetooth out, the whole demo — this library, its backend, the SDK and the demo
+program — is 75,940 bytes of flash, so Bluetooth alone is about five and a half
+times everything else in the binary. The other three are about having the
+hardware, not about size.
 
 One consequence worth knowing: `psdl_pico_input_status()` reports
 `NO KEYBOARD IN THIS BUILD` rather than a link state. The serial console survives —
@@ -520,14 +503,34 @@ names from there too. Porting to a differently wired board, or changing the cloc
 is that one file. The clock comment in it lists which reachable frequencies are
 worth wanting and what each does to the panel, the frame time and the sample rate.
 
-**`pico2_w` (RP2350) at 125 MHz.** Below the SDK's 150 MHz default, so the core is
-not overclocked, and SCK is sysclk/2 = 62.5 MHz, exactly the ST7789 maximum, so
-the panel is not either. Earlier defaults of 128 and 138 MHz ran the panel 2.4%
-and 10.4% over; both worked here, neither is something a different panel has to
-tolerate. The clock is not arbitrary in the other direction either: it keeps the
-I2S divider exact at 8 kHz (122.070312) and within 12 ppm at 22050. Override the
-board with `-DPICO_BOARD=pico_w`; that part still builds, but it is short of RAM
-and flash.
+**`pico2_w` (RP2350) at 125 MHz** is the default. Below the SDK's 150 MHz default,
+so the core is not overclocked, and SCK is sysclk/2 = 62.5 MHz, exactly the ST7789
+maximum, so the panel is not either. 128 and 138 MHz are both reachable and both
+work here, but they run the panel 2.4% and 10.4% over its rated maximum, which is
+not something a different panel has to tolerate. The clock is not arbitrary in the
+other direction either:
+it keeps the I2S divider exact at 8 kHz (122.070312) and within 12 ppm at 22050.
+
+**`pico_w` (RP2040) builds too** — `-DPICO_BOARD=pico_w`. Nothing in the library
+is RP2350-only: the two PIO drivers assemble for both parts, and the backend uses
+no instruction or peripheral the RP2040 lacks. The board these are developed and
+run on daily is the `pico2_w`, so treat the RP2040 as supported by construction
+rather than exercised — it builds clean and the arithmetic below works out, but
+the panel, the DAC and the radio have not all been brought up on one at once.
+
+What the smaller part is short of is room, and the numbers say where. The demo
+with everything on is 522,896 bytes of flash and 211,720 of `.bss` there, against
+a 256 KB main SRAM region — so it fits, with 49 KB left for stack, heap and a
+client's own data. That is workable for an 8bpp client whose art is in flash, and
+it is not much. A 16bpp client is the harder case: its own 320x200 RGB565
+framebuffer is 128 KB, which does not fit beside a Bluetooth build on this part.
+Turning Bluetooth off is what makes the space — 421 KB of flash and 22 KB of RAM,
+by far the largest lever either board has.
+
+Note that the CYW43 radio is currently required on both, even with the keyboard
+off: the configure step refuses a `PICO_BOARD` without Bluetooth support
+regardless of `PICOSDL_INPUT_BT_KEYBOARD`. A plain `pico` or `pico2` will not
+configure today, which is a gap rather than a decision.
 
 `set_sys_clock_khz()` must be called **before** `stdio_init_all()`. It re-parents
 `clk_peri` off `clk_sys`, and stdio derives the UART divisor from `clk_peri` when
@@ -605,11 +608,13 @@ cores does not stop the sound: a debugger halt leaves the last two buffers
 cycling into the DAC. Stopping the PIO state machines is what silences it, which
 is what `picodev.sh` does before programming.
 
-**The pin numbers moved out.** `pio-st7789/pinout.h` held them literally;
-it now derives them from `backend/pico/board.h` so the board is described in one
-place. The driver's own names are unchanged. Upstream's commented-out pins for the
-backlight, touch controller and SD card are dropped rather than carried, since
-nothing here drives them and two commented copies would only drift apart.
+**The display driver holds no pin numbers.** `backend/pico/board.h` is the only
+place they exist; `psdl_pico_video.c` fills in a `struct dispPinout` from it and
+hands that to `dispInit()`. Upstream carries them as literals in its own header,
+which means a board is described in two places that drift apart. `dispInit()`
+also checks the one rule the PIO program imposes — SCK must be CS + 1, because
+SM1 side-sets two bits based at CS — and refuses rather than leaving the panel
+dark with nothing to read.
 
 **The I2S divider check demanded an exact ratio.** Upstream panics unless the
 requested divider lands exactly on a multiple of 1/256. The divider's eight
@@ -619,9 +624,9 @@ rejects almost every rate the library exists to produce: at 32-bit stereo,
 only 8000 Hz happens to divide exactly. 22050 Hz at 138 MHz needs 48.894558,
 which rounds to a real rate of 22050.012 Hz — an error of 0.5 ppm, four orders
 of magnitude below anything audible, and upstream refused to boot on it. The
-fork measures what the rounding costs and compares it against a configurable
-tolerance, `PioI2S_MAX_CLOCK_ERROR_PPM`. It is the fork's only change, and it is
-worth offering upstream.
+copy here measures what the rounding costs and compares it against a configurable
+tolerance, `PioI2S_MAX_CLOCK_ERROR_PPM`. That is the only place it diverges from
+upstream, and it is worth offering back.
 
 ## Footprint
 
@@ -644,8 +649,8 @@ The depth changes two rows and nothing else. The screen pool is what an 8bpp
 client draws into and does not exist at 16, where the client owns its own
 framebuffer — so the 115 KB the library gives back there is not a saving, it is
 the client's to spend, and a 320×200 RGB565 buffer is 128 KB of it. The second
-band buffer is the cost of keeping the status line at a depth whose pixels the
-PIO no longer expands.
+band buffer is the cost of keeping the status line at a depth where the PIO does
+not expand its pixels.
 
 All of it is tunable: `PSDL_SCREEN_BUFFERS`, `PSDL_ARENA_BYTES`,
 `PSDL_MAX_SURFACES`, `PSDL_EVENT_QUEUE_LEN` and `PSDL_AUDIO_BLOCK_FRAMES` are
@@ -671,13 +676,10 @@ renderer at 320x200. Known gaps are in `TODO.md`.
 
 Permissive on purpose. This library contains no code from the game it was written
 for: it is an independent implementation of the slice of SDL2 that game uses, and
-everything it depends on is permissive too. A copyleft licence would contradict
-the one thing the design keeps insisting on, which is that picosdl is reusable by
-anything - including firmware that is not open source.
-
-It was previously described here as GPLv2-or-later, "matching the code it was
-extracted alongside". That was wrong: being built next to a GPL program does not
-make a library derived from it.
+everything it depends on is permissive too. Being built alongside a GPL program
+does not make a library derived from it, and a copyleft licence here would
+contradict the one thing the design keeps insisting on — that picosdl is reusable
+by anything, including firmware that is not open source.
 
 Parts that came from elsewhere keep their own terms, and `LICENSE` lists them:
 `backend/pico/bt` carries BSD-3-Clause material from BTstack and pico-examples,
