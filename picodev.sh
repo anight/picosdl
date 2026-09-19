@@ -11,10 +11,10 @@
 # The part is worked out from the probe. Put --rp2040 or --rp2350 first to say so
 # explicitly instead - needed only if the detection cannot place what it finds.
 #
-# A bare path is still accepted, so `./picodev.sh build/picopop.elf` means the same
-# as `./picodev.sh flash build/picopop.elf`. With no arguments at all it prints this
-# and does nothing: it used to flash a default image, which is too much to do on
-# an empty command line now that there are commands that do not touch the flash.
+# A bare path is accepted, so `./picodev.sh build/picopop.elf` means the same as
+# `./picodev.sh flash build/picopop.elf`. With no arguments at all it prints this
+# and does nothing - flashing something by default is too much to do on an empty
+# command line when most of these commands do not touch the flash.
 #
 # Environment:
 #   OPENOCD           override the OpenOCD binary
