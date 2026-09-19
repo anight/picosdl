@@ -177,6 +177,7 @@ add_library(picosdl STATIC
     backend/pico/psdl_pico_time.c
     backend/pico/psdl_pico_cpu.c
     backend/pico/psdl_pico_log.c
+    backend/pico/psdl_pio_usage.c
 
     ${LCD_DRIVER_DIR}/dispPioSt7789.c
 )

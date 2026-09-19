@@ -21,6 +21,7 @@
 #include "psdl_font.h"
 #include "psdl_internal.h"
 #include "psdl_pico.h"
+#include "psdl_pio_usage.h"
 
 static struct dmaTransfer *s_xfer;
 
@@ -386,9 +387,14 @@ void psdl_backend_video_init(int w, int h)
 		.reset = PSDL_BOARD_LCD_RESET_PIN,
 	};
 
+	struct psdl_pio_usage pio_before;
+	psdl_pio_usage_read(&pio_before);
+
 	if (!dispInit(&lcd_pins, PSDL_COLOR_DEPTH))
 		psdl_panic("picosdl: dispInit() rejected the pinout in board.h - "
 		           "every pin must be 0..31 and SCK must be CS + 1");
+
+	psdl_pio_usage_report("display driver", &pio_before, 1);
 
 	/* The game's canvas is shorter than the panel. Centre it and paint the
 	 * bars once - nothing draws there again, so they stay black. */

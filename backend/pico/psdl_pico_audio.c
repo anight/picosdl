@@ -30,6 +30,7 @@
 #include "pio-i2s.h"
 #include "psdl_internal.h"
 #include "psdl_pico.h"
+#include "psdl_pio_usage.h"
 
 static struct PioI2S_Config s_i2s_config;
 static struct PioI2S        s_i2s;
@@ -204,12 +205,19 @@ void psdl_backend_audio_open(int freq, int channels, int block_frames)
 	s_i2s_config.dmaIRQ     = DMA_IRQ_0;
 	s_open_rate             = freq;
 
+	struct psdl_pio_usage pio_before;
+	psdl_pio_usage_read(&pio_before);
+
 	multicore_launch_core1(core1_audio_main);
 
 	/* Wait for the mixer to come up, so a caller that immediately unpauses
 	 * does not race the DMA start. */
 	while (!s_core1_up)
 		tight_loop_contents();
+
+	/* PioI2S_init runs on core 1; reporting here keeps it on the core that owns
+	 * the console, and nothing else touches PIO in between. */
+	psdl_pio_usage_report("I2S driver", &pio_before, 1);
 
 	printf("picosdl: audio %d Hz stereo, %d-frame blocks (%.1f ms), mixing on core 1\n",
 	       freq, PSDL_AUDIO_BLOCK_FRAMES,

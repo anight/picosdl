@@ -629,9 +629,9 @@ knowing about the other, so the allocation is kept in one place,
 
 | | |
 |---|---|
-| PIO0 SM0, SM1 | display — hardcoded in `dispPioSt7789.c` |
-| PIO1 SM0 | I2S out |
-| PIO0 SM2 | CYW43 radio — the SDK claims whatever is free |
+| PIO0 SM0, SM1 | display — hardcoded in `dispPioSt7789.c`, 13 instructions |
+| PIO1 SM0 | I2S out — 8 instructions |
+| PIO2 SM0 | CYW43 radio — 6 instructions; the SDK claims whatever is free |
 | DMA 0–3 | display — hardcoded, and **not** claimed by the driver |
 | DMA 4, 5 | I2S data + control |
 | DMA 6, 7 | CYW43 |
@@ -641,6 +641,37 @@ knowing about the other, so the allocation is kept in one place,
 | GPIO 27, 26, 22 | joystick X (ADC1), Y (ADC0), button (active low) |
 | GPIO 6, 7 | I2C1 SDA, SCL — game controller (optional) |
 | GPIO 0, 1 | UART console |
+
+Those three lines are printed by the firmware at boot rather than being kept in
+step by hand — `psdl_pio_usage.c` snapshots every block before each driver
+initialises and reports the difference:
+
+```
+picosdl: display driver acquired PIO0/SM0,SM1 (13 instructions, 13 total)
+picosdl: I2S driver acquired PIO1/SM0 (8 instructions, 8 total)
+picosdl: CYW43 driver acquired PIO2/SM0 (6 instructions, 6 total)
+```
+
+Three facts fall out of it that are worth having in mind.
+
+**On an RP2350 the three do not share instruction memory at all.** There are
+three PIO blocks and one driver in each, which is why every "total" above equals
+what that driver added. On an RP2040 there are only two blocks, so at least two
+of them have to share one, and the totals stop being equal.
+
+**Two different mechanisms put programs there.** The I2S and CYW43 drivers go
+through `pio_add_program()`, so the SDK's allocator knows about them. The
+display driver writes `instr_mem` directly and claims nothing, so it is absent
+from the SDK's bitmap entirely — visible only as the wrap range of the state
+machines it runs. Anything counting instruction memory has to look at both, and
+anything asking the SDK for space on PIO0 will be told all 32 slots are free.
+
+**The radio takes its PIO late.** `cyw43_arch_init()` claims none: the bus
+program is added by `cyw43_ll_bus_init()` when the chip is powered, which under
+the threadsafe_background arch is an interrupt some time after
+`hci_power_control()` has returned. It can therefore land inside another
+driver's measurement, which is why a report subtracts what has already been
+attributed rather than trusting its own before-and-after alone.
 
 **Init order is load-bearing.** The display driver hardcodes DMA channels 0–3
 and does not claim them, while the CYW43 and I2S drivers both ask the SDK for

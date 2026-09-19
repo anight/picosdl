@@ -40,11 +40,14 @@
 
 #include "psdl_internal.h"
 #include "psdl_pico.h"
+#include "psdl_pio_usage.h"
 #include "psdl_pico_log.h"
 
 static int      s_ready;
 #if PSDL_HAVE_BT_KEYBOARD
 static int      s_bt_up;
+static struct psdl_pio_usage s_cyw43_pio_before;
+static int      s_cyw43_pio_reported;
 static unsigned s_keys_seen;
 #endif
 
@@ -346,6 +349,13 @@ void psdl_backend_input_init(void)
 #endif
 
 #if PSDL_HAVE_BT_KEYBOARD
+	/* The radio's PIO is not taken by cyw43_arch_init() but when the chip is
+	 * powered, on an interrupt some time after hci_power_control() below has
+	 * returned - and possibly inside another driver's bracket. Snapshot here
+	 * and let the poll report it; the attribution in psdl_pio_usage.c keeps the
+	 * two apart. */
+	psdl_pio_usage_read(&s_cyw43_pio_before);
+
 	if (cyw43_arch_init() != 0) {
 		printf("picosdl: cyw43_arch_init failed - is PICO_BOARD a wireless board?\n"
 		       "         carrying on without a keyboard\n");
@@ -465,6 +475,14 @@ void psdl_backend_input_poll(void)
 
 	/* Typed commands, whatever this build has. Core 0, outside any interrupt. */
 	poll_console();
+
+#if PSDL_HAVE_BT_KEYBOARD
+	/* One shot: stops probing the moment the radio's bus program appears. */
+	if (s_bt_up && !s_cyw43_pio_reported) {
+		s_cyw43_pio_reported =
+			psdl_pio_usage_report("CYW43 driver", &s_cyw43_pio_before, 0);
+	}
+#endif
 
 #if PSDL_HAVE_JOYSTICK
 	poll_joystick();
