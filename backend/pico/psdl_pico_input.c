@@ -47,6 +47,47 @@ static int      s_ready;
 #if PSDL_HAVE_BT_KEYBOARD
 static int      s_bt_up;
 static struct psdl_pio_usage s_cyw43_pio_before;
+
+/*
+ * Leave the radio nowhere to go but PIO0, then let the other blocks go again.
+ *
+ * The SDK chooses a block for the CYW43 bus program by searching down from the
+ * highest instance - pio.c: `int pio_num = NUM_PIOS; while (pio_num--)` - and
+ * exposes no way to ask for a particular one; the only configurable things
+ * about that bus are its clock dividers. So the one lever available is to make
+ * every other block unusable at the moment it looks, by claiming all four of
+ * each block's machines.
+ *
+ * It is held only across that moment. hci_power_control() is called once and
+ * the radio is never power-cycled, so once its program has appeared the bus
+ * will not be re-initialised and the corral can come down - leaving the other
+ * blocks free for anything else rather than blocked for the life of the
+ * firmware.
+ *
+ * Wanted only where PIO is scarce enough to be worth concentrating. An RP2040
+ * has two blocks and three drivers, and without this the radio takes the second
+ * one by itself while the display and I2S share the first - which is the better
+ * arrangement, and the reason this is not simply always on.
+ */
+static void pio_corral_for_radio(bool on)
+{
+	static bool held;
+	uint i, sm;
+
+	if (on == held)
+		return;
+	held = on;
+
+	for (i = 1; i < NUM_PIOS; ++i) {
+		for (sm = 0; sm < 4; ++sm) {
+			if (on)
+				pio_sm_claim(pio_get_instance(i), sm);
+			else
+				pio_sm_unclaim(pio_get_instance(i), sm);
+		}
+	}
+}
+
 static int      s_cyw43_pio_reported;
 static unsigned s_keys_seen;
 #endif
@@ -349,6 +390,8 @@ void psdl_backend_input_init(void)
 #endif
 
 #if PSDL_HAVE_BT_KEYBOARD
+	pio_corral_for_radio(true);
+
 	/* The radio's PIO is not taken by cyw43_arch_init() but when the chip is
 	 * powered, on an interrupt some time after hci_power_control() below has
 	 * returned - and possibly inside another driver's bracket. Snapshot here
@@ -359,6 +402,7 @@ void psdl_backend_input_init(void)
 	if (cyw43_arch_init() != 0) {
 		printf("picosdl: cyw43_arch_init failed - is PICO_BOARD a wireless board?\n"
 		       "         carrying on without a keyboard\n");
+		pio_corral_for_radio(false);    /* no radio coming; give them back now */
 	} else {
 		bt_app_setup();
 
@@ -481,6 +525,8 @@ void psdl_backend_input_poll(void)
 	if (s_bt_up && !s_cyw43_pio_reported) {
 		s_cyw43_pio_reported =
 			psdl_pio_usage_report("CYW43 driver", &s_cyw43_pio_before, 0);
+		if (s_cyw43_pio_reported)
+			pio_corral_for_radio(false);
 	}
 #endif
 

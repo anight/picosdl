@@ -629,9 +629,9 @@ knowing about the other, so the allocation is kept in one place,
 
 | | |
 |---|---|
-| PIO0 SM0, SM1 | display — hardcoded in `dispPioSt7789.c`, 13 instructions |
-| PIO1 SM0 | I2S out — 8 instructions |
-| PIO2 SM0 | CYW43 radio — 6 instructions; the SDK claims whatever is free |
+| PIO0 SM0, SM1 | display — 13 instructions |
+| PIO0 SM3 | I2S out — 8 instructions |
+| PIO0 SM2 | CYW43 radio — 6 instructions |
 | DMA 0–3 | display — hardcoded, and **not** claimed by the driver |
 | DMA 4, 5 | I2S data + control |
 | DMA 6, 7 | CYW43 |
@@ -648,23 +648,29 @@ initialises and reports the difference:
 
 ```
 picosdl: display driver acquired PIO0/SM0,SM1 (13 instructions, 13 total)
-picosdl: I2S driver acquired PIO1/SM0 (8 instructions, 8 total)
-picosdl: CYW43 driver acquired PIO2/SM0 (6 instructions, 6 total)
+picosdl: I2S driver acquired PIO0/SM3 (8 instructions, 21 total)
+picosdl: CYW43 driver acquired PIO0/SM2 (6 instructions, 27 total)
 ```
 
-Three facts fall out of it that are worth having in mind.
+All three share one block: 27 of its 32 instruction slots and all four of its
+state machines, with PIO1 and PIO2 left entirely free.
 
-**On an RP2350 the three do not share instruction memory at all.** There are
-three PIO blocks and one driver in each, which is why every "total" above equals
-what that driver added. On an RP2040 there are only two blocks, so at least two
-of them have to share one, and the totals stop being equal.
+Four things about that are worth knowing.
 
-**Two different mechanisms put programs there.** The I2S and CYW43 drivers go
-through `pio_add_program()`, so the SDK's allocator knows about them. The
-display driver writes `instr_mem` directly and claims nothing, so it is absent
-from the SDK's bitmap entirely — visible only as the wrap range of the state
-machines it runs. Anything counting instruction memory has to look at both, and
-anything asking the SDK for space on PIO0 will be told all 32 slots are free.
+**Every driver goes through the SDK's allocator.** `pio_claim_unused_sm()` and
+`pio_add_program()`, all three of them, which is the only reason they can share
+a block at all: the allocator can route a driver around what it knows is taken.
+A driver that writes `instr_mem` and the SM registers directly is invisible to
+it, and the next driver to ask for a machine is handed one already in use.
+
+**The radio has to be steered there.** The SDK picks a block for the CYW43 bus
+program by searching down from the highest instance and offers no way to request
+one — the only configurable things about that bus are its clock dividers. So
+`pio_corral_for_radio()` claims every machine on every other block just long
+enough for the radio to initialise, and releases them once it has. Whether that
+is wanted depends on the part: an RP2040 has two blocks for three drivers, and
+without the corral the radio takes the second by itself while the display and
+I2S share the first, which is the better arrangement of the two.
 
 **The radio takes its PIO late.** `cyw43_arch_init()` claims none: the bus
 program is added by `cyw43_ll_bus_init()` when the chip is powered, which under
@@ -672,6 +678,12 @@ the threadsafe_background arch is an interrupt some time after
 `hci_power_control()` has returned. It can therefore land inside another
 driver's measurement, which is why a report subtracts what has already been
 attributed rather than trusting its own before-and-after alone.
+
+**Instruction memory is write-only.** `instr_mem` is `io_wo_32`, so what a slot
+holds cannot be read back. The counts above come from the SDK's allocation
+bitmap — reconstructed by asking `pio_can_add_program_at_offset()` about a
+one-instruction program at each of the 32 offsets — unioned with the wrap range
+of every running state machine.
 
 **Init order is load-bearing.** The display driver hardcodes DMA channels 0–3
 and does not claim them, while the CYW43 and I2S drivers both ask the SDK for
