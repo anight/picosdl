@@ -220,6 +220,10 @@ if (PICOSDL_INPUT_BT_KEYBOARD)
 endif()
 
 target_compile_definitions(picosdl PUBLIC PSDL_COLOR_DEPTH=${PICOSDL_COLOR_DEPTH})
+# The display driver compiles only the depth it is told about - a different PIO
+# program, a different state machine count, a different DMA chain, and at 8bpp a
+# CLUT the other has no use for. PRIVATE because only this library compiles it.
+target_compile_definitions(picosdl PRIVATE DISP_COLOR_DEPTH=${PICOSDL_COLOR_DEPTH})
 
 target_include_directories(picosdl PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/include

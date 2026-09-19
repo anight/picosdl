@@ -558,9 +558,13 @@ void psdl_backend_video_sync(void)
  * Palette writes go straight to the CLUT the PIO chain reads. The transfer in
  * flight is reading it right now, so wait first - otherwise a fade would tear
  * the frame it is fading.
+ *
+ * At 16bpp there is no CLUT and no palette: a pixel carries its own colour.
+ * Nothing calls this then, and the driver does not build dispSetClut() either.
  */
 void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors)
 {
+#if PSDL_COLOR_DEPTH == 8
 	if (!s_ready)
 		return;
 
@@ -573,4 +577,7 @@ void psdl_backend_palette_set(int first, int ncolors, const SDL_Color *colors)
 		entries[i].b = colors[i].b;
 	}
 	dispSetClut(first, (uint32_t)ncolors, entries);
+#else
+	(void)first; (void)ncolors; (void)colors;
+#endif
 }
