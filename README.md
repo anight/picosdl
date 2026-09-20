@@ -621,8 +621,13 @@ path has no host coverage; see `TODO.md`.
 
 ## Tooling
 
-`picodev.sh` drives a board over SWD with a CMSIS-DAP probe, either a Raspberry Pi
-Debugprobe or a second Pico running its firmware, on either part:
+`picodev.sh` drives a board over SWD with a CMSIS-DAP probe, on either part. The
+probe is either a
+[Raspberry Pi Debug Probe](https://www.raspberrypi.com/documentation/microcontrollers/debug-probe.html),
+whose documentation covers wiring and use, or a spare Pico running the
+[debugprobe firmware](https://github.com/raspberrypi/debugprobe), wired as
+described in Appendix A of
+[Getting started with Raspberry Pi Pico-series](https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf).
 
 ```bash
 ./picodev.sh flash [firmware.elf]   # program and reset

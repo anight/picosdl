@@ -2,23 +2,39 @@
 #
 # Program, reset and watch a board over SWD.
 #
-#   ./picodev.sh flash [firmware.elf]   program and reset
-#   ./picodev.sh reset                  reset the board, program nothing
-#   ./picodev.sh halt                   stop the cores and silence the audio
-#   ./picodev.sh logs                   watch the console (tail -f, in effect)
-#   ./picodev.sh flash-and-logs [fw]    program, reset, then watch the console
+#   ./picodev.sh [options] flash [firmware.elf]  program and reset
+#   ./picodev.sh [options] reset                 reset the board, program nothing
+#   ./picodev.sh [options] halt                  stop the cores, silence the audio
+#   ./picodev.sh [options] logs                  watch the console (tail -f, in effect)
+#   ./picodev.sh [options] flash-and-logs [fw]   program, reset, then watch the console
 #
-# The part is worked out from the probe. Put --rp2040 or --rp2350 first to say so
-# explicitly instead - needed only if the detection cannot place what it finds.
+# Options come before the command:
+#
+#   --rp2040, --rp2350   which part is attached. Worked out from the probe when
+#                        not given; needed only if that cannot place what it finds.
+#   --console DEV        the board's serial console, e.g. /dev/ttyACM1. Found
+#                        under /dev/serial/by-id when not given.
+#
+# An option overrides the environment variable behind it.
 #
 # A bare path is accepted, so `./picodev.sh build/picopop.elf` means the same as
 # `./picodev.sh flash build/picopop.elf`. With no arguments at all it prints this
 # and does nothing - flashing something by default is too much to do on an empty
 # command line when most of these commands do not touch the flash.
 #
+# The probe is any CMSIS-DAP one on the board's SWD pins. Either of:
+#
+#   A Raspberry Pi Debug Probe. Wiring, OpenOCD and the serial connection:
+#   https://www.raspberrypi.com/documentation/microcontrollers/debug-probe.html
+#
+#   A spare Pico running https://github.com/raspberrypi/debugprobe. Wiring is
+#   Appendix A of Getting started with Raspberry Pi Pico-series, A.2 for the
+#   setup and A.3 for the pins:
+#   https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf
+#
 # Environment:
 #   OPENOCD           override the OpenOCD binary
-#   PICOPOP_CONSOLE   the board's serial console (default: the Debugprobe's UART)
+#   PICOPOP_CONSOLE   the board's serial console; --console overrides it
 #   PICOPOP_BAUD      console baud rate (default 115200)
 #   PROBE_SERIAL      pick one probe by serial number, if more than one is attached
 #
@@ -28,7 +44,9 @@ DEFAULT_FIRMWARE=./build/picosdl-demo.elf
 BAUD="${PICOPOP_BAUD:-115200}"
 
 usage() {
-	sed -n '3,16p' "$0" | sed 's/^#\{1,2\} \{0,1\}//'
+	# From the title down to the Environment block, found rather than counted:
+	# a hardcoded line range silently truncates the moment this header is edited.
+	sed -n '3,/^# Environment:/p' "$0" | sed '$d' | sed 's/^#\{1,2\} \{0,1\}//'
 	exit "${1:-1}"
 }
 
@@ -41,12 +59,26 @@ usage() {
 # attached, so detection cannot happen here.
 #
 CHIP=""
-case "${1:-}" in
---rp2040|--rp2350)
-	CHIP="${1#--}"
-	shift
-	;;
-esac
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--rp2040|--rp2350)
+		CHIP="${1#--}"
+		shift
+		;;
+	--console)
+		[ $# -ge 2 ] || { echo "$0: --console needs a device" >&2; usage 1; }
+		PICOPOP_CONSOLE="$2"
+		shift 2
+		;;
+	--console=*)
+		PICOPOP_CONSOLE="${1#*=}"
+		shift
+		;;
+	*)
+		break
+		;;
+	esac
+done
 
 # ------------------------------------------------------------------ OpenOCD
 
@@ -246,6 +278,8 @@ openocd_run() {
 #
 # The by-id path is preferred because ttyACMn is assigned in enumeration order and
 # moves when anything else is plugged in.
+# --console sets PICOPOP_CONSOLE above, so an explicit device - from either
+# route - is simply the variable being set, and wins over the search below.
 find_console() {
 	if [ -n "$PICOPOP_CONSOLE" ]; then
 		echo "$PICOPOP_CONSOLE"
