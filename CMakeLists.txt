@@ -11,7 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #   * standalone, as its own project - `cmake -S picosdl -B build` - which is
 #     how its demo and its tests are built, and how another game would start;
 #   * as a subdirectory of a game that has already initialised the Pico SDK,
-#     which is what picopop's src/CMakeLists.txt does.
+#     which is what picopop's CMakeLists.txt does.
 #
 # Only the first may call project()/pico_sdk_init(); calling them twice is an
 # error. PICOSDL_STANDALONE records which mode we are in.
