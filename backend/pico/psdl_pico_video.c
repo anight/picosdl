@@ -325,22 +325,6 @@ static void bands_tick(void)
 #endif
 }
 
-/*
- * The display driver hardcodes DMA channels 0..3 and does not claim them.
- * Nothing else in this firmware would know that: the CYW43 driver and the I2S
- * driver both ask the SDK for "any free channel", and would happily be given
- * one out from under the panel. Claim them here, first, so the allocator knows.
- */
-static void claim_display_dma_channels(void)
-{
-	for (int ch = 0; ch < 4; ++ch) {
-		if (dma_channel_is_claimed(ch))
-			psdl_panic("picosdl: DMA channel %d already claimed - "
-			           "the video backend must be initialised first", ch);
-		dma_channel_claim(ch);
-	}
-}
-
 /* The panel's control pins start as plain GPIOs; the driver moves the SPI ones
  * to PIO itself once its programs are loaded. */
 static void lcd_pins_init(void)
@@ -373,7 +357,6 @@ void psdl_backend_video_init(int w, int h)
 	if (s_ready)
 		return;
 
-	claim_display_dma_channels();
 	lcd_pins_init();
 
 	/* The driver has no board of its own: it is told how this one is wired.

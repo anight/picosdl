@@ -499,9 +499,9 @@ Three drivers share one chip, so the allocation is recorded in one place,
 | PIO0 SM0, SM1 | display — 13 instructions |
 | PIO0 SM2 | CYW43 radio — 6 instructions |
 | PIO0 SM3 | I2S out — 8 instructions |
-| DMA 0–3 | display — hardcoded, and **not** claimed by the driver |
-| DMA 4, 5 | I2S data + control |
-| DMA 6, 7 | CYW43 |
+| 4 DMA channels | display — data, row walk, and at 8bpp the CLUT lookup pair |
+| 2 DMA channels | I2S data + control |
+| 2 DMA channels | CYW43 |
 | DMA_IRQ_0 | I2S, handled on core 1 |
 | GPIO 8–12, 15 | LCD: D/C, CS, SCK, MOSI, MISO, RESET |
 | GPIO 2, 3, 4 | I2S BCLK, LRCLK, DIN |
@@ -509,11 +509,16 @@ Three drivers share one chip, so the allocation is recorded in one place,
 | GPIO 6, 7 | I2C1 SDA, SCL — game controller (optional) |
 | GPIO 0, 1 | UART console |
 
-**Init order is load-bearing.** The display driver hardcodes DMA channels 0–3 and
-does not claim them, while the CYW43 and I2S drivers both request any free
-channel from the SDK. The video backend therefore claims 0–3 on the driver's
-behalf and must run first. It panics if any of them is already taken, which turns
-a silent corruption into a message.
+**DMA channels are allocated, not numbered.** All three drivers take theirs with
+`dma_claim_unused_channel()`, so which numbers they receive depends only on the
+order they start in and nothing depends on the answer. The display needs four at
+8bpp and two at 16bpp, the lookup ring existing only where there is a CLUT to
+look things up in.
+
+Two of the display's four form a chain whose second channel disables its own
+chaining by pointing `CHAIN_TO` at itself, which is how the hardware spells "do
+not chain". That is why the driver keeps the numbers in variables rather than
+simply not caring about them.
 
 ### PIO allocation
 
