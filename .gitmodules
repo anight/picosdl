@@ -1,8 +1,8 @@
 [submodule "pio-st7789"]
 	path = pio-st7789
-	url = git@github.com:anight/pio-st7789.git
+	url = https://github.com/anight/pio-st7789.git
 	branch = main
 [submodule "pio-i2s"]
 	path = pio-i2s
-	url = git@github.com:anight/pio-i2s.git
+	url = https://github.com/anight/pio-i2s.git
 	branch = main
