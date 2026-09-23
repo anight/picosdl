@@ -725,6 +725,18 @@ indefinitely and the output never glitches. The consequence is that halting the
 cores does not stop the sound: a debugger halt leaves the last two buffers cycling
 into the DAC.
 
+**The half to refill is asked for, not counted.** Each completed block raises the
+DMA interrupt, and the handler refills the half that has just been played. The
+completion flag is one bit, so if the handler is held off past the end of the
+next block - a client holding `SDL_LockAudio()` that long is enough, since the
+mixer takes it first - two completions arrive as one interrupt. Upstream pio-i2s
+alternates between the halves on every interrupt, and one lost that way leaves
+it refilling the half being played for as long as the program runs: every block
+torn, heard as static under the music and nowhere in the samples. The copy here
+takes the half from the data channel's read address instead, so a late handler
+still gets the free one. Found in picotyrian, whose song loads held the lock for
+16 ms against an 11.6 ms block.
+
 **The I2S divider tolerance.** Upstream pio-i2s panics unless the requested
 divider lands exactly on a multiple of 1/256. The divider's eight fractional bits
 are a rounding target rather than a constraint, and requiring exactness rejects
@@ -733,8 +745,8 @@ almost every rate this library exists to produce: at 32-bit stereo and 125 MHz,
 22050 Hz needs 44.288549, which rounds to a real rate of 22049.744 Hz — an error
 of 11.6 ppm, two orders of magnitude below the smallest audible pitch difference.
 The copy here measures what the rounding costs and compares it against a
-configurable tolerance, `PioI2S_MAX_CLOCK_ERROR_PPM`. It is the only divergence
-from upstream in that submodule.
+configurable tolerance, `PioI2S_MAX_CLOCK_ERROR_PPM`. That and the buffer
+selection above are the two divergences from upstream in that submodule.
 
 ---
 
